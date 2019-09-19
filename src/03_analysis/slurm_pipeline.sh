@@ -1,6 +1,8 @@
 # Main slurm controller workflow
 
 # initial MEDIPS run
+summary=0
+echo summary
 sbatch slurm_run.sh
 
 
