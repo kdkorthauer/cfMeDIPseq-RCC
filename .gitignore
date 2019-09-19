@@ -1,0 +1,13 @@
+data/*
+out/*
+_slurm/*
+._*
+*.RData
+*.rds
+*.txt.gz
+*.bam
+*.sam
+*.fq
+*.Rout
+src/03_analysis_log/*
+*.DS*
