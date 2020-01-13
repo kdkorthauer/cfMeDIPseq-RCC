@@ -120,7 +120,7 @@ volcano_urine <- plotVolcano(diff.file =file.path(outdir, "urineR.urineC.diff.rd
 
 # plasma
 plotHeat <- function(diff.file, lab1, lab2, n1, n2, colnames = FALSE, 
-	topSig = 1){
+  topSig = 1){
   diff <- readRDS(file=diff.file)
   which.up <- which(diff$logFC > 0)
   which.down <- which(diff$logFC < 0)
@@ -134,7 +134,7 @@ plotHeat <- function(diff.file, lab1, lab2, n1, n2, colnames = FALSE,
 
     which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
   }else{
-  	which.sig <- which(diff$limma.adj.p.value < topSig)
+    which.sig <- which(diff$limma.adj.p.value < topSig)
   }
 
   dmrs <- diff[which.sig, grepl("counts", colnames(diff))]
@@ -225,8 +225,8 @@ res <- rbind(res, tmp)
 
 res <- res %>% filter(lab1 != "rcc_D") %>%
   mutate(method = as.factor(method),
-  	     window = as.factor(window),
-  	     type = ifelse(lab1=="rcc", "plasma", "urine")) %>%
+         window = as.factor(window),
+         type = ifelse(lab1=="rcc", "plasma", "urine")) %>%
   filter(method == "original")
 
 
@@ -235,7 +235,7 @@ res_summary <- res %>%
   group_by(lab1, lab2, window, method) %>%
   summarize(meanAUC = mean(auc, na.rm = TRUE),
             sdAUC = sd(auc, na.rm = TRUE),
-  	        n = n(),
+            n = n(),
             lowerAUC = meanAUC - qnorm(0.975)*sdAUC/sqrt(n),
             upperAUC = meanAUC + qnorm(0.975)*sdAUC/sqrt(n))
 
@@ -553,8 +553,8 @@ res <- rbind(res, tmp)
 
 res <- res %>%
   mutate(method = as.factor(method),
-  	     window = as.factor(window),
-  	     type = ifelse(lab1=="rcc", "plasma", "urine")) %>%
+         window = as.factor(window),
+         type = ifelse(lab1=="rcc", "plasma", "urine")) %>%
   filter(method == "original")
 
 
@@ -563,7 +563,7 @@ res_summary <- res %>%
   group_by(lab1, lab2, window, method) %>%
   summarize(meanAUC = mean(auc, na.rm = TRUE),
             sdAUC = sd(auc, na.rm = TRUE),
-  	        n = n(),
+            n = n(),
             lowerAUC = meanAUC - qnorm(0.975)*sdAUC/sqrt(n),
             upperAUC = meanAUC + qnorm(0.975)*sdAUC/sqrt(n))
 
@@ -605,10 +605,10 @@ ggsave(file.path(savedir, "auc_rcc_bcla_violin.pdf"), width=3, height=2.5)
 
 depths <- function(mdobjlist, CS, type){
   depth <- data.frame(sapply(mdobjlist, function(x){
-  	  x@genome_count[CS@genome_CF >= 0]
+      x@genome_count[CS@genome_CF >= 0]
   }))
   colnames(depth) <- sapply(mdobjlist, function(x){ 
-  	gsub(".bam|.sorted.bam", "", x@sample_name)})
+    gsub(".bam|.sorted.bam", "", x@sample_name)})
   colnames(depth) <- gsub("_", "", colnames(depth))
   colnames(depth) <- paste0(type, "_", colnames(depth))
   return(depth)
@@ -619,7 +619,7 @@ CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
 if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_all.pdf"))){
   ### plasma
   df <- cbind(depths(medip.rcc, CS, "rcc"),
-  	depths(medip.control, CS, "ctrl"))
+    depths(medip.control, CS, "ctrl"))
   # include all sig rows
   diff.file =file.path(outdir, "rcc.control.diff.rds")
   diff <- readRDS(file=diff.file)
@@ -665,8 +665,8 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_all.pdf"))){
   colors <- colors[as.numeric(as.factor(tidydf$Type))]
   pdf(file.path(outdir, "PCA_1_2_3_plasma_all.pdf"), width = 4.5, height = 4.5)
    scatterplot3d(tidydf[,1:3], pch =20, 
-  	 xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-  	 color=colors)
+     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
+     color=colors)
    legend(0,-3.75, legend = levels(as.factor(tidydf$Type)),
       col =  c("#E69F00", "#56B4E9"), pch = 20, 
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
@@ -723,7 +723,7 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_all.pdf"))){
 if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_all.pdf"))){
   ### urine
   df <- cbind(depths(medip.urineR, CS, "urineR"),
-  	depths(medip.urineC, CS, "urineC"))
+    depths(medip.urineC, CS, "urineC"))
   # include all sig rows
   diff.file =file.path(outdir, "urineR.urineC.diff.rds")
   diff <- readRDS(file=diff.file)
@@ -771,8 +771,8 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_all.pdf"))){
    colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
    colors <- colors[as.numeric(as.factor(tidydf$Type))]
    scatterplot3d(tidydf[,1:3], pch =20, 
-  	 xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-  	 color=colors)
+     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
+     color=colors)
    legend(0,-6.75, legend = levels(as.factor(tidydf$Type)),
       col =  c("#E69F00", "#56B4E9"), pch = 20, 
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
@@ -831,7 +831,7 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_all.pdf"))){
 if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_top300.pdf"))){
   ### plasma
   df <- cbind(depths(medip.rcc, CS, "rcc"),
-  	depths(medip.control, CS, "ctrl"))
+    depths(medip.control, CS, "ctrl"))
   # include all sig rows
   diff.file =file.path(outdir, "rcc.control.diff.rds")
   diff <- readRDS(file=diff.file)
@@ -883,8 +883,8 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_top300.pdf"))){
    colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
    colors <- colors[as.numeric(as.factor(tidydf$Type))]
    scatterplot3d(tidydf[,1:3], pch =20, 
-  	 xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-  	 color=colors)
+     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
+     color=colors)
    legend(0,-5.3, legend = levels(as.factor(tidydf$Type)),
       col =  c("#E69F00", "#56B4E9"), pch = 20, 
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
@@ -940,7 +940,7 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_top300.pdf"))){
 if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_top300.pdf"))){
   ### urine
   df <- cbind(depths(medip.urineR, CS, "urineR"),
-  	depths(medip.urineC, CS, "urineC"))
+    depths(medip.urineC, CS, "urineC"))
   # include all sig rows
   diff.file =file.path(outdir, "urineR.urineC.diff.rds")
   diff <- readRDS(file=diff.file)
@@ -991,8 +991,8 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_top300.pdf"))){
    colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
    colors <- colors[as.numeric(as.factor(tidydf$Type))]
    scatterplot3d(tidydf[,1:3], pch =20, 
-  	 xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-  	 color=colors)
+     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
+     color=colors)
    legend(0,-3.92, legend = levels(as.factor(tidydf$Type)),
       col =  c("#E69F00", "#56B4E9"), pch = 20, 
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
@@ -1047,7 +1047,7 @@ if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_top300.pdf"))){
 
 # list files
 files <- list.files(pattern = "sampleprob*", recursive = TRUE,
-	path = outdir, full.names = TRUE)
+  path = outdir, full.names = TRUE)
 files <- files[!grepl("pdf", files)]
 files <- files[!grepl("v", files)]
 
@@ -1285,20 +1285,131 @@ urine$sample_name <- as.factor(urine$sample_name)
 urine$sample_name <- sortLvlsByVar.fnc(urine$sample_name, urine$class_prob)
 
 
-plasma %>% ggplot(aes(x = sample_name, y = class_prob, fill = true_label)) +
+main_plasma <- plasma %>% ggplot(aes(x = sample_name, y = class_prob, fill = true_label)) +
   geom_boxplot() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) +
   labs(fill = "True class") + 
-  scale_fill_manual(values = cols) + 
+  scale_fill_manual(values = cols,
+    guide = guide_legend(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+    title.theme = element_text(size=8, hjust = 0.5))) + 
   ylab("Test set probability of RCC") + xlab("Sample")
+main_plasma
 ggsave(file.path(outdir, "Boxplot_testset_probs_plasma_sorted.pdf"),
   width = 5, height = 3)
 
-urine %>% ggplot(aes(x = sample_name, y = class_prob, fill = true_label)) +
+main_urine <- urine %>% ggplot(aes(x = sample_name, y = class_prob, fill = true_label)) +
   geom_boxplot() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) +
   labs(fill = "True class") + 
-  scale_fill_manual(values = cols) + 
+  scale_fill_manual(values = cols, 
+    guide = guide_legend(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+    title.theme = element_text(size=8, hjust = 0.5))) + 
   ylab("Test set probability of RCC") + xlab("Sample")
+main_urine
 ggsave(file.path(outdir, "Boxplot_testset_probs_urine_sorted.pdf"),
   width = 5, height = 3)
+
+
+
+
+# Add stage/grade/histo annotation bar
+library(viridis)
+library(wesanderson)
+
+add_annotations <- function(main, dat){
+  dat <- dat %>% 
+  mutate(Stage = as.factor(ifelse(Stage=="Control", NA, Stage)),
+    Grade = as.factor(ifelse(Grade=="Control", NA, Stage)),
+    Grade = as.factor(ifelse(is.na(Grade) & true_label == "RCC", "Unknown", Stage)))
+
+  anno_stage <- ggplot(dat %>% 
+    distinct(sample_name, Stage)) +
+  geom_bar(mapping = aes(x = sample_name, y = 1,
+   fill = Stage), 
+  stat = "identity", 
+  width = 1)+
+  scale_fill_viridis_d(direction = -1, 
+    guide = guide_legend(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
+    title.theme = element_text(size=8, hjust = 0.5))) +
+  theme_void()
+
+  anno_grade <- ggplot(dat %>% 
+    distinct(sample_name, Grade)) +
+  geom_bar(mapping = aes(x = sample_name, y = 1,
+   fill = Grade), 
+  stat = "identity", 
+  width = 1)+
+  scale_fill_manual(values = c(rev(viridis::viridis(5, option = "magma"))[-1], "grey"),
+    guide = guide_legend(
+    direction = "horizontal",
+    nrow = 1,
+    title.position = "top",
+    label.position = "bottom",
+    position= "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
+    title.theme = element_text(size=8, hjust = 0.5))) +
+  theme_void()
+
+  rmv <- c(1,2,5)
+  if (length(unique(dat$Histology)) == 2)
+    rmv <- c(1,2,4,5)
+
+  anno_hist <- ggplot(dat %>% 
+    distinct(sample_name, Histology)) +
+  geom_bar(mapping = aes(x = sample_name, y = 1,
+   fill = Histology), 
+  stat = "identity", 
+  width = 1)+
+  scale_fill_manual(values = c(wes_palette("Rushmore1", n = 5)[-c(1,2,5)], "#E69F00"),
+    guide = guide_legend(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+    title.theme = element_text(size=8, hjust = 0.5))) +
+  theme_void()
+
+  legend_anno <- plot_grid(
+    get_legend(anno_stage), 
+    get_legend(anno_grade), 
+    get_legend(anno_hist), 
+    get_legend(main), 
+    ncol = 1)
+  main <- main + theme(legend.position = "none")
+  anno_stage <- anno_stage + theme(legend.position = "none")
+  anno_grade <- anno_grade + theme(legend.position = "none")
+  anno_hist <- anno_hist + theme(legend.position = "none")
+  plot <- plot_grid(anno_stage, anno_grade, anno_hist,
+    main, align = "v", ncol = 1, axis = "tb", 
+    rel_heights = c(0.5, 0.5, 0.5, 15))
+  plot_grid(plot, legend_anno, nrow = 1, rel_widths = c(10, 3))
+
+}
+
+add_annotations(main_plasma + 
+  ylab("RCC Risk Score") +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()), plasma)
+ggsave(file.path(outdir, "Boxplot_testset_probs_plasma_annotated.pdf"),
+  width = 7, height = 3.5)
+
+add_annotations(main_urine +
+  ylab("RCC Risk Score") +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()), urine)
+ggsave(file.path(outdir, "Boxplot_testset_probs_urine_annotated.pdf"),
+  width = 7, height = 3.5)
