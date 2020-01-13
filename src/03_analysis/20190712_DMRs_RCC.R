@@ -1037,7 +1037,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    # glmnet 
 
    library(glmnet)
-   cvob1=cv.glmnet(x=t(dmrs),y=as.numeric(grepl(lab1, colnames(dmrs))),
+   cvob1=cv.glmnet(x=t(log(dmrs+1)),y=as.numeric(grepl(lab1, colnames(dmrs))),
      family="binomial", alpha=0.5, type.measure="auc", 
      nfolds = 3, lambda = seq(0,0.05,by = 0.01), standardize=FALSE)
 
