@@ -1,8 +1,8 @@
 # check that fastq header contains last 5 barcode bases from spreadsheet
 
 # control samples
-spreadsheet=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/healthy_control/14\ healtly\ patients.csv 
-datadir=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/healthy_control/
+spreadsheet=../../../cfMeDIPseq/data/healthy_control/14\ healtly\ patients.csv 
+datadir=../../../cfMeDIPseq/data/healthy_control/
 
 nrows=`cat "$(echo $spreadsheet)" | wc -l`
 ((nrows++))
@@ -26,8 +26,8 @@ done
 
 
 # rcc samples
-spreadsheet=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/RCC/42\ RCC\ fastq\ files.csv
-datadir=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/novogene-raw/C202SC18123014/raw_data/
+spreadsheet=../../../cfMeDIPseq/data/RCC/42\ RCC\ fastq\ files.csv
+datadir=../../../cfMeDIPseq/data/RCC/novogene-raw/C202SC18123014/raw_data/
 
 nrows=`cat "$(echo $spreadsheet)" | wc -l`
 ((nrows++))
@@ -52,8 +52,8 @@ done
 
 
 # do the same for urine samples
-spreadsheet=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/urine/Keegan\ -\ Urine\ samples.csv
-datadir=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/urine/hwftp.novogene.com/data_release/C202SC19040590/raw_data/
+spreadsheet=../../../cfMeDIPseq/data/urine/Keegan\ -\ Urine\ samples.csv
+datadir=../../../cfMeDIPseq/data/urine/hwftp.novogene.com/data_release/C202SC19040590/raw_data/
 
 nrows=`cat "$(echo $spreadsheet)" | wc -l`
 ((nrows++))
@@ -76,8 +76,8 @@ done
 
 
 # do the same for urine CONTROL samples
-spreadsheet=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/urine/Keegan\ -\ Urine\ samples\ -\ Normal.csv
-datadir=/n/irizarryfs01/kkorthauer/cfMeDIPseq/data/urine/hwftp.novogene.com/data_release/C202SC19040590/raw_data/
+spreadsheet=../../../cfMeDIPseq/data/urine/Keegan\ -\ Urine\ samples\ -\ Normal.csv
+datadir=../../../cfMeDIPseq/data/urine/hwftp.novogene.com/data_release/C202SC19040590/raw_data/
 
 nrows=`cat "$(echo $spreadsheet)" | wc -l`
 ((nrows++))

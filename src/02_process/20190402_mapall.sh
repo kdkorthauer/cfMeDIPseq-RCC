@@ -3,16 +3,20 @@
 # script to submit 1 job for each sample to carry out the 
 # qc, trimming, and mapping
 
-OUTDIR=/rafalab/keegan/cfMeDIPseq/out
-SLURMIO=/rafalab/keegan/cfMeDIPseq/_slurm
-SCRIPTDIR=/rafalab/keegan/cfMeDIPseq/src/02_process
-DATDIR=/rafalab/keegan/cfMeDIPseq/data
-INDEX=/rafalab/keegan/ReferenceGenomes/human/bowtie2
+OUTDIR=/scratch/st-kdkortha-1/cfMeDIPseq/out
+SLURMIO=/scratch/st-kdkortha-1/cfMeDIPseq/_pbs
+SCRIPTDIR=/arc/project/st-kdkortha-1/cfMeDIPseq-RCC/src/02_process
+DATDIR=/arc/project/st-kdkortha-1/cfMeDIPseq/data
+INDEX=/scratch/st-kdkortha-1/ReferenceGenomes/human/bowtie2
+mkdir -p $INDEX
+mkdir -p $OUTDIR
+mkdir -p $SLURMIO
 export BOWTIE2_INDEXES=$INDEX
-RCC=novogene-raw/C202SC18123014/raw_data
+RCC=RCC/novogene-raw/C202SC18123014/raw_data
 BLCA=bladder
 CONTROL=healthy_control
 URINE=urine/hwftp.novogene.com/data_release/C202SC19040590/raw_data
+JAN2020=20200108/128.120.88.251/H202SC19122450/Rawdata
 PATH=$PATH:$HOME/bin/FastQC:$HOME/bin/TrimGalore-0.6.0
 
 export PATH
@@ -29,8 +33,11 @@ if [ ! -f hg19.zip ]; then
   unzip hg19.zip
 fi
 
+export BOWTIE2_INDEXES
+
+
 # loop through project directories
-for GROUP in RCC BLCA CONTROL URINE; 
+for GROUP in RCC BLCA CONTROL URINE JAN2020; 
 do 
     if [ $GROUP = "URINE" ]; then
       mkdir -p $OUTDIR/fastqc/$GROUP\_CONTROL
@@ -60,14 +67,25 @@ do
       cd $DATDIR/$CONTROL
     elif [ $GROUP = "URINE" ]; then
       cd $DATDIR/$URINE
+    elif [ $GROUP = "JAN2020" ]; then
+      cd $DATDIR/$JAN2020
     else
       echo Group not found
       exit 1
     fi
 
-    for fq in *_1.fq.gz;
+
+    #for fq in *_1.fq.gz;
+    for fq in $( find . -maxdepth 2 -type f -name "*_1.fq.gz" );
     do
-         id=$(sed 's/_1.fq.gz//g' <<< $fq)
+         fq=$(sed 's/_1.fq.gz//g' <<< $fq)
+         id=fq
+
+         if [[ $GROUP =~ "JAN2020" ]]; then
+           lane=$(sed 's/.*_L/L/g' <<< $fq)
+           id=$(dirname $fq)
+           id=$(basename $id)\_$lane
+         fi
   
          if [[ $GROUP =~ "URINE" ]]; then
             echo Check urine ids
@@ -97,61 +115,43 @@ do
            if [[ "$id" =~ S65|S66|S67|S68  ]]; then
              RUN=FALSE
            fi    
-         fi
+        fi
 
         if [ -s $OUTDIR/sortedbam_dup/$GROUP/$id.sorted.bam ]; then
           RUN=FALSE
         fi
-         
+
+        # extra samps from different project for jan2020 run
+        if [[ $GROUP =~ JAN2020 ]]; then
+          if [[ "$id" =~ EPin1212_L7|FxhC100k|FxhCNPTs_L3|FxhCPX79_L8|K27FP07_L5|K27EP06_L5|Undetermined_L1|Undetermined_L2|Undetermined_L3|Undetermined_L4|Undetermined_L5|Undetermined_L6|Undetermined_L7|Undetermined_L8 ]]; then
+             RUN=FALSE
+          fi
+        fi
+        
+        
         if [[ $RUN = TRUE ]]; then
            export id
-           sbatch -J $id\_$GROUP -n 2 -N 1 \
-            -t 2-12:00 --mem 4G \
-            -o $SLURMIO/map_%x_%j.out \
-            -e $SLURMIO/map_%x_%j.err \
-            --wrap="sh $SCRIPTDIR/20190402_mapone.sh" 
+           export fq
+           export cwd=$PWD
+           qsub -N $id\_$GROUP \
+            -l walltime=24:00:00,select=1:ncpus=2:mem=4gb \
+            -A st-kdkortha-1 \
+            -o $SLURMIO/map_$id\_$GROUP.out \
+            -e $SLURMIO/map_$id\_$GROUP.err \
+            -V \
+            $SCRIPTDIR/20190402_mapone.sh
         fi    
      done  
 done
 
-GROUP=PRCA
-cd $DATDIR/nepc
-
-export GROUP
-mkdir -p $OUTDIR/fastqc/$GROUP
-mkdir -p $OUTDIR/sortedbam/$GROUP
-mkdir -p $OUTDIR/sortedbam_dup/$GROUP
-mkdir -p $OUTDIR/trimgalore/$GROUP
-mkdir -p $OUTDIR/bowtie2/$GROUP
-
-fqfiles=$(ls ./*/*_1.fq.gz)
-for fq in $fqfiles;
-do
-	cd $DATDIR/nepc
-	id=$(sed 's/_1.fq.gz//g' <<< $(basename $fq))
-	id_short=$(sed 's/_HY2FCBBXX_L005//g' <<< $id)
-	echo processing $GROUP sample $id_short
-
-  cd $id_short 
-  export id
-  export id_short
-  
-  if [ ! -s $OUTDIR/sortedbam_dup/$GROUP/$id.sorted.bam ]; then
-    sbatch -J $id_short\_$GROUP -n 2 -N 1 \
-      -t 2-12:00 --mem 4G \
-      -o $SLURMIO/map_%x_%j.out \
-      -e $SLURMIO/map_%x_%j.err \
-      --wrap="sh $SCRIPTDIR/20190402_mapone.sh"
-  fi
-done  
-
-
 # run multiqc
-module load python/3.5.6
+module load miniconda3/4.6.14
+conda activate cfmedip
+
 mkdir -p $OUTDIR/multiqc
 
 
-for GROUP in RCC BLCA CONTROL URINE_RCC URINE_CONTROL; 
+for GROUP in RCC BLCA CONTROL URINE_RCC URINE_CONTROL JAN2020; 
 do 
 	multiqc $OUTDIR/fastqc/$GROUP/ --ignore *val* -f -o $OUTDIR/multiqc \
 	    -n $GROUP\_fastqc_multiqc.html
