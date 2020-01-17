@@ -92,6 +92,10 @@ if [ ! -s $OUTDIR/sortedbam/$GROUP/$id.sorted.bam.bai ]; then
 fi
 
 if [ ! -s $OUTDIR/sortedbam_dup/$GROUP/$id.sorted.bam ]; then
+  # cleanup / remove extraneous files from previous runs
+  rm -f $OUTDIR/sortedbam_dup/$GROUP/$id.positionsort.bam.*
+  rm -f $OUTDIR/sortedbam_dup/$GROUP/$id.namesort.bam.*
+  
   # The first sort can be omitted if the file is already name ordered
   samtools sort -n -o $OUTDIR/sortedbam_dup/$GROUP/$id.namesort.bam $OUTDIR/sortedbam/$GROUP/$id.sorted.bam
 
