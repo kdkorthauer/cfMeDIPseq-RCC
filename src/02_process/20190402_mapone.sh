@@ -101,19 +101,17 @@ if [ ! -s $OUTDIR/sortedbam_dup/$GROUP/$id.sorted.bam ]; then
 
   # Add ms and MC tags for markdup to use later
   samtools fixmate -m $OUTDIR/sortedbam_dup/$GROUP/$id.namesort.bam $OUTDIR/sortedbam_dup/$GROUP/$id.fixmate.bam
+  rm $OUTDIR/sortedbam_dup/$GROUP/$id.namesort.bam
 
   # Markdup needs position order
   samtools sort -o $OUTDIR/sortedbam_dup/$GROUP/$id.positionsort.bam $OUTDIR/sortedbam_dup/$GROUP/$id.fixmate.bam
+  rm $OUTDIR/sortedbam_dup/$GROUP/$id.fixmate.bam
 
   # Finally mark and remove duplicates
   samtools markdup -r -s $OUTDIR/sortedbam_dup/$GROUP/$id.positionsort.bam $OUTDIR/sortedbam_dup/$GROUP/$id.sorted.bam
+  rm $OUTDIR/sortedbam_dup/$GROUP/$id.positionsort.bam
 
   # and index
   samtools index $OUTDIR/sortedbam_dup/$GROUP/$id.sorted.bam
-
-  # cleanup remove extraneous files
-  rm $OUTDIR/sortedbam_dup/$GROUP/$id.namesort.bam
-  rm $OUTDIR/sortedbam_dup/$GROUP/$id.fixmate.bam
-  rm $OUTDIR/sortedbam_dup/$GROUP/$id.positionsort.bam
 fi
 

@@ -134,7 +134,7 @@ do
            export fq
            export cwd=$PWD
            qsub -N $id\_$GROUP \
-            -l walltime=24:00:00,select=1:ncpus=2:mem=4gb \
+            -l walltime=40:00:00,select=1:ncpus=2:mem=4gb \
             -A st-kdkortha-1 \
             -o $SLURMIO/map_$id\_$GROUP.out \
             -e $SLURMIO/map_$id\_$GROUP.err \
@@ -176,6 +176,9 @@ do
         -n $GROUP\_botwie_multiqc.html
   elif [ $GROUP = "URINE_CONTROL" ]; then
     multiqc $SLURMIO/*URINE_CONTROL* -m bowtie2 -f -o $OUTDIR/multiqc \
+        -n $GROUP\_botwie_multiqc.html
+  elif [ $GROUP = "JAN2020" ]; then
+    multiqc $SLURMIO/*JAN2020* -m bowtie2 -f -o $OUTDIR/multiqc \
         -n $GROUP\_botwie_multiqc.html
   else
     echo "Group not found"

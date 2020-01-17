@@ -13,7 +13,6 @@ library(ComplexHeatmap)
 library(DESeq2)
 library(RColorBrewer)
 library(edgeR)
-library(cowplot)
 library(gtable)
 library(gridGraphics)
 library(grid)
@@ -347,7 +346,7 @@ outdir <- "../../out/multiqc"
 dat.dir <- "../../out/sortedbam_dup"
 setwd(outdir)
 
-groups <- c("RCC", "CONTROL", "URINE_RCC", "URINE_CONTROL")
+groups <- c("RCC", "CONTROL", "URINE_RCC", "URINE_CONTROL", "JAN2020")
 
 tools <- c("fastqc_trimmed", "botwie")
 
@@ -356,6 +355,7 @@ dirs <- list.dirs()
 tab_all <- NULL
 
 meta <- read_excel("../../data/RCC/42 RCC fastq files.xlsx")
+meta2 <- read_excel("../../data/20200108/20200108_Sample List.xlsx")
 
 
 #####

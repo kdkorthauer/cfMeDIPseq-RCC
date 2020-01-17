@@ -8,7 +8,7 @@ library(readxl)
 # get windowsize
 ws <- Sys.getenv("WINDOWSIZE")
 
-outdir <- paste0("../../out/MEDIPS_", ws)
+outdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
 
 bamdir <- "../../out/sortedbam_dup"
 dir.create(outdir, showWarnings = FALSE)
