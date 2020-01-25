@@ -1,6 +1,8 @@
 # Main slurm controller workflow
 
 # initial MEDIPS run
+WINDOWSIZE=300
+export WINDOWSIZE
 summary=0
 echo summary
 sbatch slurm_run.sh
@@ -9,8 +11,6 @@ sbatch slurm_run.sh
 # iterate DMR detection
 ntop=300
 export ntop
-WINDOWSIZE=300
-export WINDOWSIZE
 iter=0
 export iter
 sbatch slurm_one_iteration.sh
