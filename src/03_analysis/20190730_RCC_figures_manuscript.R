@@ -29,17 +29,17 @@ top <- 300
 ws <- 300
 merge <- FALSE
 res <- NULL
-savedir <- "../../out/MEDIPS_summary"
+savedir <- "/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_summary"
 dir.create(savedir, showWarnings = FALSE)
 
 # dir where binned medips objects of all samples are saved
-outdir <- paste0("../../out/MEDIPS_", ws)
+outdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
 
 
 # read in spread sheet with stage/grade/histology
-grade <- read_excel("../../data/RCC/Stage-Grade-Histology Analysis.xlsx")
+grade <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Stage-Grade-Histology Analysis.xlsx")
 
-meta <- read_excel("../../data/RCC/Keegan - RCC plasma.xlsx", 
+meta <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Keegan - RCC plasma.xlsx", 
   sheet = 1)
 
 medip.rcc <- readRDS(file.path(outdir, "medip.rcc.rds"))
@@ -93,10 +93,10 @@ plotVolcano <- function(diff.file, n1, n2, sig=0.1){
   which.up <- which(dmrs$logFC > 0)
   which.down <- which(dmrs$logFC < 0)
 
-  which.sig.up <- which(rank(dmrs$limma.adj.p.value[which.up], 
+  which.sig.up <- which(rank(dmrs$P.Value[which.up], 
      ties.method = "random") <= as.numeric(top)/2)
 
-  which.sig.down <- which(rank(dmrs$limma.adj.p.value[which.down], 
+  which.sig.down <- which(rank(dmrs$P.Value[which.down], 
       ties.method = "random") <= as.numeric(top)/2)
 
   message(min(-log10(dmrs$limma.adj.p.value[which.down][which.sig.down])), " sig down")
@@ -342,8 +342,8 @@ ggsave(file.path(savedir, "Figure2_allheat.pdf"), width=10, height=6)
 
 ## unique vs duplicate reads for plasma & urine
 
-outdir <- "../../out/multiqc"
-dat.dir <- "../../out/sortedbam_dup"
+outdir <- "/arc/project/st-kdkortha-1/cfMeDIPseq/out/multiqc"
+dat.dir <- "/arc/project/st-kdkortha-1/cfMeDIPseq/out/sortedbam_dup"
 setwd(outdir)
 
 groups <- c("RCC", "CONTROL", "URINE_RCC", "URINE_CONTROL", "JAN2020")
@@ -354,8 +354,8 @@ dirs <- list.dirs()
 
 tab_all <- NULL
 
-meta <- read_excel("../../data/RCC/42 RCC fastq files.xlsx")
-meta2 <- read_excel("../../data/20200108/20200108_Sample List.xlsx")
+meta <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/42 RCC fastq files.xlsx")
+meta2 <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20200108_Sample List.xlsx")
 
 
 #####
@@ -382,7 +382,16 @@ tab <- read_tsv(file.path(thisdir, "multiqc_general_stats.txt")) %>%
   mutate(group=group) %>%
   mutate(group = ifelse(group == "RCC", "PLASMA_RCC", 
     ifelse(group == "CONTROL", "PLASMA_CONTROL", group))) %>%
-  mutate(id = gsub("HY2FCBBXX_L005|", "", id))
+  mutate(id = gsub("HY2FCBBXX_L005|", "", id)) 
+
+  if (group == "JAN2020"){
+    cntk <- colnames(tab)
+    tab <- tab %>%
+       mutate(ID = gsub("_CKD.*", "", Sample)) %>%
+       left_join(meta2, by="ID") %>%
+       mutate(group = paste0(group, "_", Source, "_", Status)) %>%
+       select(cntk)
+  }
 
   if (group == "RCC"){
     tab <- tab[tab$id %in% meta$`Fastq name`,]
@@ -410,7 +419,50 @@ tab_all <- tab_all %>% unique() %>%
   filter(!(group == "URINE_RCC" & grepl("S11|S12|S30|S33|S34|S48|S59|S60|
     S62|S64|S42|S25|S14", Sample))) %>% 
   filter(!(group == "PLASMA_CONTROL" & grepl("S040", Sample))) %>%
-  filter(!(group == "URINE_CONTROL" & grepl("S56|S4.|S6.|S37", Sample))) 
+  filter(!(group == "URINE_CONTROL" & grepl("S56|S4.|S6.|S37", Sample))) %>%
+  filter(!(grepl("JAN2020", group) & grepl(paste0(c("R104_AN", # <1M reads
+    "R41_LD009", # <1M reads
+    "R91_233", # <1M reads / Oncocytoma
+    "R93_250", # <1M reads / Oncocytoma
+    "R54_2321", # Oncocytoma
+    "R38_112", # Oncocytoma
+    "R92_242", # Oncocytoma
+    "R35_190", # Oncocytoma
+    "R109_112", # Oncocytoma
+    "R113_242", # Oncocytoma
+    "R118_233", # Oncocytoma
+    "R114_250", # Oncocytoma
+    "R12_2350", # missing histology
+    "R67_168", # missing histology
+    "R82_205", # missing histology
+    "R11_2353_.*L7", # extra lane
+    "R12_2350_.*L7", # extra lane   
+    "R24_LD021_.*L7", # extra lane  
+    "R42_LD013_.*L7", # extra lane   
+    "R6_2366_.*L7"), collapse="|"), # extra lane
+    Sample))) 
+
+# samples with fewer than 1M reads
+tab_all %>% filter(type=="Unique") %>%
+   bind_cols(tab_all %>% filter(type=="Duplicate") %>% 
+   dplyr::rename(dup = count) %>% select(dup)) %>%
+   mutate(total = dup + count) %>%
+   mutate(ID=gsub("_CKD.*", "", Sample)) %>%
+   filter(total < 1e6) %>%
+   select(ID, group) %>% unique()
+
+# samples using more than 1 lane
+tab_all %>% filter(type=="Unique") %>%
+   bind_cols(tab_all %>% filter(type=="Duplicate") %>% 
+   dplyr::rename(dup = count) %>% select(dup)) %>%
+   mutate(total = dup + count) %>%
+  filter(grepl("val_1", Sample)) %>%
+  mutate(ID=gsub("_CKD.*", "", Sample)) %>%
+  group_by(ID, group) %>%
+  summarize(count=n(), 
+    tot_count=min(total)/1e6) %>%
+  filter(count > 1) %>%
+  select(ID, group, tot_count)
 
 
 total <- tab_all %>% filter(type=="Unique") %>%
@@ -441,7 +493,7 @@ duprate <- ggplot(tab_wide,
 tool <- tools[2]
 
 thisdir <- dirs[grepl(tool, dirs)]
-thisdir <- thisdir[!grepl("BLCA|RCC|CONTROL|PRCA|PDAC|Novartis", thisdir)]
+thisdir <- thisdir[!grepl("BLCA|RCC|CONTROL|PRCA|PDAC|Novartis|JAN2020", thisdir)]
 
 tab <- read_tsv(file.path(thisdir, "multiqc_general_stats.txt")) %>%
   mutate(group = ifelse(grepl("URINE_RCC", Sample), "URINE_RCC", 
@@ -466,8 +518,87 @@ tab <- read_tsv(file.path(thisdir, "multiqc_general_stats.txt")) %>%
     S62|S64|S42|S25|S14", Sample))) %>% 
   filter(!(group == "CONTROL" & grepl("S040", Sample))) %>%
   filter(!(group == "URINE_CONTROL" & grepl("S56|S4|S6|S37", Sample))) %>%
+  filter(!(grepl("JAN2020", group) & grepl(paste0(c("R104_AN", # <1M reads
+    "R41_LD009", # <1M reads
+    "R91_233", # <1M reads / Oncocytoma
+    "R93_250", # <1M reads / Oncocytoma
+    "R54_2321", # Oncocytoma
+    "R38_112", # Oncocytoma
+    "R92_242", # Oncocytoma
+    "R35_190", # Oncocytoma
+    "R109_112", # Oncocytoma
+    "R113_242", # Oncocytoma
+    "R118_233", # Oncocytoma
+    "R114_250", # Oncocytoma
+    "R12_2350", # missing histology
+    "R67_168", # missing histology
+    "R82_205", # missing histology
+    "R11_2353_L7", # extra lane
+    "R12_2350_L7", # extra lane   
+    "R24_LD021_L7", # extra lane  
+    "R42_LD013_L7", # extra lane   
+    "R6_2366_L7"), collapse="|"), # extra lane
+    Sample))) %>%
   mutate(group = ifelse(group == "RCC", "PLASMA_RCC", 
     ifelse(group == "CONTROL", "PLASMA_CONTROL", group))) 
+
+alignmentrate <- ggplot(tab, aes(x = group, y = rate, fill = group)) +
+  geom_boxplot() +
+  ylab("Overall Alignment percentage") +
+  labs(fill = "Sample Type") +
+  xlab("Sample Type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+
+# jan2020 data 
+
+thisdir <- dirs[grepl(tool, dirs)]
+thisdir <- thisdir[grepl("JAN2020", thisdir)]
+
+tab_jan2020 <- read_tsv(file.path(thisdir, "multiqc_general_stats.txt")) %>%
+  mutate(ID = gsub("map_", "", Sample)) %>%
+  mutate(ID = gsub("_L._JAN2020.err", "", ID)) %>%
+  filter(!(grepl("JAN2020", group) & grepl(paste0(c("R104_AN", # <1M reads
+    "R41_LD009", # <1M reads
+    "R91_233", # <1M reads / Oncocytoma
+    "R93_250", # <1M reads / Oncocytoma
+    "R54_2321", # Oncocytoma
+    "R38_112", # Oncocytoma
+    "R92_242", # Oncocytoma
+    "R35_190", # Oncocytoma
+    "R109_112", # Oncocytoma
+    "R113_242", # Oncocytoma
+    "R118_233", # Oncocytoma
+    "R114_250", # Oncocytoma
+    "R12_2350", # missing histology
+    "R67_168", # missing histology
+    "R82_205", # missing histology
+    "R11_2353_L7", # extra lane
+    "R12_2350_L7", # extra lane   
+    "R24_LD021_L7", # extra lane  
+    "R42_LD013_L7", # extra lane   
+    "R6_2366_L7"), collapse="|"), # extra lane
+    Sample))) %>%
+  left_join(meta2, by="ID") %>%
+  dplyr::rename(rate = `Bowtie 2 / HiSAT2_mqc-generalstats-bowtie_2_hisat2-overall_alignment_rate`)
+
+# no samples in jan2020 cohort with mapping rate below 25%
+min(tab_jan2020$rate)
+
+alignmentrate_jan2020 <- ggplot(tab_jan2020, 
+  aes(x = Source, y = rate, fill = Status)) +
+  geom_boxplot() +
+  ylab("Overall Alignment percentage") +
+  labs(fill = "Sample Type") +
+  xlab("Sample Type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+tab_jan2020 <- tab_jan2020 %>%
+  mutate(group=paste0("JAN2020_", Source, "_", Status)) %>%
+  rename(ID="id") %>%
+  select(Sample, rate, group, id)
+tab <- rbind(tab, tab_jan2020)
+
 
 alignmentrate <- ggplot(tab, aes(x = group, y = rate, fill = group)) +
   geom_boxplot() +
@@ -480,7 +611,7 @@ alignmentrate <- ggplot(tab, aes(x = group, y = rate, fill = group)) +
 # get number of mapped reads
 
 ## num reads in bams (in house vs. toronto)
-groups <- c("RCC", "CONTROL", "URINE_RCC", "URINE_CONTROL")
+groups <- c("RCC", "CONTROL", "URINE_RCC", "URINE_CONTROL", "JAN2020")
 names(groups) <- groups
 
 tab <- NULL
@@ -499,11 +630,33 @@ for (g in seq_along(groups)){
     bams <- bams[! bams %in% c("S040.sorted.bam")]
   }else if (groups[g] == "URINE_RCC"){
     bams <- bams[! bams %in% c("S56.sorted.bam", "S4.sorted.bam", "S6.sorted.bam", "S37.sorted.bam")]
-  }else{
+  }else if (groups[g] == "URINE_CONTROL"){
     bams <- bams[! bams %in% c("S11.sorted.bam", "S12.sorted.bam", "S30.sorted.bam", "S33.sorted.bam", 
     "S34.sorted.bam", "S48.sorted.bam", "S59.sorted.bam", "S60.sorted.bam",
     "S62.sorted.bam", "S64.sorted.bam", "S42.sorted.bam", "S25.sorted.bam",
     "S14.sorted.bam")]
+  }else if (groups[g] == "JAN2020"){
+    bams <- bams[! grepl(paste0(c("R104_AN", # <1M reads
+    "R41_LD009", # <1M reads
+    "R91_233", # <1M reads / Oncocytoma
+    "R93_250", # <1M reads / Oncocytoma
+    "R54_2321", # Oncocytoma
+    "R38_112", # Oncocytoma
+    "R92_242", # Oncocytoma
+    "R35_190", # Oncocytoma
+    "R109_112", # Oncocytoma
+    "R113_242", # Oncocytoma
+    "R118_233", # Oncocytoma
+    "R114_250", # Oncocytoma
+    "R12_2350", # missing histology
+    "R67_168", # missing histology
+    "R82_205", # missing histology
+    "R11_2353_L7", # extra lane
+    "R12_2350_L7", # extra lane   
+    "R24_LD021_L7", # extra lane  
+    "R42_LD013_L7", # extra lane   
+    "R6_2366_L7"), collapse="|"), # extra lane
+    bams)]
   }
 
   for (b in bams){
@@ -512,7 +665,18 @@ for (g in seq_along(groups)){
       summarize(mapped = sum(mapped)) %>%
       mutate(group = groups[g]) %>%
       mutate(group = ifelse(group == "RCC", "PLASMA_RCC", 
-        ifelse(group == "CONTROL", "PLASMA_CONTROL", group)))
+        ifelse(group == "CONTROL", "PLASMA_CONTROL", group))) %>%
+      mutate(file=b)
+
+    if (groups[g] == "JAN2020"){
+    cntk <- colnames(rw)
+    rw <- rw %>%
+       mutate(ID = gsub("_L..sorted.bam", "", file)) %>%
+       left_join(meta2, by="ID") %>%
+       mutate(group = paste0(group, "_", Source, "_", Status)) %>%
+       select(cntk)
+    }
+
     tab <- rbind(tab, rw)
   }
 
@@ -540,7 +704,7 @@ sf1 <- plot_grid(total + theme(legend.position = "none",
                  ncol = 2, align = "v", rel_heights=c(0.7,1),
                  labels=c("A", "B", "C", "D"))
 plot_grid(sf1, leg, ncol=2, rel_widths = c(1,0.25))
-ggsave(file.path(savedir, "SupplementaryFigure1.pdf"), width=9, height=7)
+ggsave(file.path(savedir, "SupplementaryFigure1_JAN2020.pdf"), width=12, height=8)
 
 
 ### AUC RCC vx BLCA
@@ -601,7 +765,9 @@ ggsave(file.path(savedir, "auc_rcc_bcla_violin.pdf"), width=3, height=2.5)
 
 
 
-### PCA plots - all sig
+
+### PCA plots - top300 - don't normalize on just 300 genes
+
 
 depths <- function(mdobjlist, CS, type){
   depth <- data.frame(sapply(mdobjlist, function(x){
@@ -616,217 +782,6 @@ depths <- function(mdobjlist, CS, type){
 
 CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
 
-if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_all.pdf"))){
-  ### plasma
-  df <- cbind(depths(medip.rcc, CS, "rcc"),
-    depths(medip.control, CS, "ctrl"))
-  # include all sig rows
-  diff.file =file.path(outdir, "rcc.control.diff.rds")
-  diff <- readRDS(file=diff.file)
-  which.sig <- which(diff$limma.adj.p.value < 0.05)
-  rm(diff)
-  df <- df[which.sig,] 
-
-  # normalize
-  sf <- DESeq2::estimateSizeFactorsForMatrix(df)
-  df <- sweep(df, MARGIN=2, sf, `/`)
-
-  grp <- gsub("_.*", "", colnames(df))
-  ids = unlist(sapply(strsplit(colnames(df), "_"), function(x) x[[2]]))
-  x <- match(ids, meta$`Sample number`)
-  subtype <- ifelse(grp == "rcc" & ids %in% meta$`Sample number`,
-    meta$Histology[x], NA)
- 
-  pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           subtype = subtype,
-           id = ids) %>%
-    mutate(Type = ifelse(type == "rcc", "RCC", "Control"))
-  
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
-
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type), size = 2)  +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "PCA_1_2_plasma_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type)) +
-    geom_point(size = 2) +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "PCA_2_3_plasma_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type)) +
-    geom_point(size = 2) +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "PCA_1_3_plasma_all.pdf"), width = 4.5, height = 3.5)
-
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
-  colors <- colors[as.numeric(as.factor(tidydf$Type))]
-  pdf(file.path(outdir, "PCA_1_2_3_plasma_all.pdf"), width = 4.5, height = 4.5)
-   scatterplot3d(tidydf[,1:3], pch =20, 
-     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-     color=colors)
-   legend(0,-3.75, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = 20, 
-      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
-  dev.off()
-
-  write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
-      quote=FALSE, row.names=FALSE,
-      file=file.path(outdir, paste0("PC_proportionVariation_plasma_all.txt")), 
-      sep = "\t")
-
-  # tsne
-  tsne <- Rtsne(t(log(df+1)), dims = 3, perplexity = 10)
-  tidydf <- select(data.frame(tsne$Y), "X1", "X2", "X3") %>%
-    mutate(tSNE1 = X1,
-           tSNE2 = X2,
-           tSNE3 = X3) %>%
-    mutate(type = grp,
-           subtype = subtype,
-           id = ids) %>%
-    mutate(Type = ifelse(type == "rcc", "RCC", "Control"))
-  
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
- 
-  ggplot() +
-    geom_point(data = tidydf, aes(x=tSNE1, y=tSNE2, colour = Type), size = 2)  +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "tSNE_1_2_plasma_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=tSNE2, y=tSNE3, colour = Type)) +
-    geom_point(size = 2) +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "tSNE_2_3_plasma_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=tSNE1, y=tSNE3, colour = Type)) +
-    geom_point(size = 2) +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "tSNE_1_3_plasma_all.pdf"), width = 4.5, height = 3.5)
-
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
-  colors <- colors[as.numeric(as.factor(tidydf$Type))]
-  pdf(file.path(outdir, "tSNE_1_2_3_plasma_all.pdf"), width = 4.5, height = 4.5)
-   scatterplot3d(tidydf[,1:3], pch =20, 
-     xlab="tSNE1", ylab="tSNE2", zlab="tSNE3", cex.symbols = 2,
-     color=colors)
-   legend(0,-4.95, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = 20, 
-      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
-  dev.off()
-
-
- }
-
-
-if (!file.exists(file.path(outdir, "PCA_1_2_3_urine_all.pdf"))){
-  ### urine
-  df <- cbind(depths(medip.urineR, CS, "urineR"),
-    depths(medip.urineC, CS, "urineC"))
-  # include all sig rows
-  diff.file =file.path(outdir, "urineR.urineC.diff.rds")
-  diff <- readRDS(file=diff.file)
-  which.sig <- which(diff$limma.adj.p.value < 0.25)
-  rm(diff)
-  df <- df[which.sig,] 
-
-  # normalize
-  sf <- DESeq2::estimateSizeFactorsForMatrix(df)
-  df <- sweep(df, MARGIN=2, sf, `/`)
-
-  grp <- gsub("_.*", "", colnames(df))
-  ids = unlist(sapply(strsplit(colnames(df), "_"), function(x) x[[2]]))
-  x <- match(ids, meta$`Sample number`)
-  subtype <- ifelse(grp == "rcc" & ids %in% meta$`Sample number`,
-    meta$Histology[x], NA)
-
- 
-  pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           subtype = subtype,
-           id = ids) %>%
-    mutate(Type = ifelse(type == "urineR", "RCC", "Control"))
-  
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
-
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type), size = 2)  +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "PCA_1_2_urine_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type)) +
-    geom_point(size = 2)+
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "PCA_2_3_urine_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type)) +
-    geom_point(size = 2)+
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "PCA_1_3_urine_all.pdf"), width = 4.5, height = 3.5)
-
-
-  pdf(file.path(outdir, "PCA_1_2_3_urine_all.pdf"), width = 4.5, height = 4.5)
-   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
-   colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   scatterplot3d(tidydf[,1:3], pch =20, 
-     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-     color=colors)
-   legend(0,-6.75, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = 20, 
-      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
-  dev.off()
-
-
-  write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
-      quote=FALSE, row.names=FALSE,
-      file=file.path(outdir, paste0("PC_proportionVariation_urine_all.txt")), 
-      sep = "\t")
-
-  tsne <- Rtsne(t(log(df+1)), dims = 3, perplexity = 10)
-  tidydf <- select(data.frame(tsne$Y), "X1", "X2", "X3") %>%
-    mutate(tSNE1 = X1,
-           tSNE2 = X2,
-           tSNE3 = X3) %>%
-    mutate(type = grp,
-           subtype = subtype,
-           id = ids) %>%
-    mutate(Type = ifelse(type == "urineR", "RCC", "Control"))
-  
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
- 
-  ggplot() +
-    geom_point(data = tidydf, aes(x=tSNE1, y=tSNE2, colour = Type), size = 2)  +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "tSNE_1_2_urine_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=tSNE2, y=tSNE3, colour = Type)) +
-    geom_point(size = 2) +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "tSNE_2_3_urine_all.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=tSNE1, y=tSNE3, colour = Type)) +
-    geom_point(size = 2) +
-    scale_color_manual(values = colors)
-  ggsave(file.path(outdir, "tSNE_1_3_urine_all.pdf"), width = 4.5, height = 3.5)
-
-  pdf(file.path(outdir, "tSNE_1_2_3_urine_all.pdf"), width = 4.5, height = 4.5)
-   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
-   colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   scatterplot3d(tidydf[,1:3], pch =20, 
-     xlab="tSNE1", ylab="tSNE2", zlab="tSNE3", cex.symbols = 2,
-     color=colors)
-   legend(0,-4, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = 20, 
-      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
-  dev.off()
-
-}
-
-
-
-### PCA plots - top300 - don't normalize on just 300 genes
 
 if (!file.exists(file.path(outdir, "PCA_1_2_3_plasma_top300.pdf"))){
   ### plasma
