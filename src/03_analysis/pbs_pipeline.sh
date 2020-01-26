@@ -14,11 +14,11 @@ qsub pbs_run.sh
 # iterate DMR detection
 iter=0
 export iter
-qsub slurm_one_iteration.sh
+qsub pbs_one_iteration.sh
 
-for iter in {1..73}; do
+for iter in {1..75}; do
   export iter
-  qsub slurm_one_iteration.sh
+  qsub pbs_one_iteration.sh
   sleep 0.5
 done
 
@@ -26,6 +26,6 @@ done
 summary=1
 echo summary
 export summary
-qsub slurm_run.sh
+qsub pbs_run.sh
 
 
