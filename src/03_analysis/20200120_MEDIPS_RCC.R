@@ -29,7 +29,7 @@ extend=300
 shift=0
 
 # canonical chrs
-chr.select <- paste0("chr", c(1:22, "X", "Y", "M"))
+chr.select <- paste0("chr", c(1:22))
 #chr.select <- "chr21"
 
 # JAN2020 samples

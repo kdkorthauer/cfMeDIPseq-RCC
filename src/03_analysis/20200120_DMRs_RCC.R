@@ -106,7 +106,8 @@ bam.jan2020 <- bam.jan2020[!grepl(paste0(c("R104_AN", # <1M reads
 set.seed(3874*as.numeric(iter))
 
 # canonical chrs
-chr.select <- paste0("chr", c(1:22, "X", "Y", "M"))
+# exclude X and Y chromosomes 
+chr.select <- paste0("chr", c(1:22))
 #chr.select <- "chr21"
 
 # read in medip objects (created in 20190712_MEDIPS_RCC.R)
@@ -457,6 +458,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
       ix1 <- sample(1:length(obj1), n1)
       ix2 <- sample(1:length(obj2), n2)
     }else if (!is.null(holdout)){
+      heatmap.file.test <- file.path(out.dir, 
+                                paste0(lab1, ".", lab2, ".diff.test",
+                                       ".heatmap.top", top,".pdf"))
+
       training <- 0
       if (names(holdout) == "obj1"){
         ix1 <- ix1[-as.numeric(holdout)]
@@ -497,6 +502,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   }
 
 	# make heatmap
+  message("extracting top DMRs")
 	if (!is.null(sig.level)){
 	 	which.sig <- which(diff$limma.adj.p.value < sig.level & 
 		               abs(diff$logFC) > 2 &
@@ -516,6 +522,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     #which.sig <- which(rank(diff$limma.adj.p.value, 
     #  ties.method = "random") <= as.numeric(top))
 	}
+
+  print(which.sig)
 
   # exploratory - merge together those in top
   if (merge){
@@ -576,6 +584,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     }
     
   }else{
+      message("reformating dmr data.frame")
   	  dmrs <- diff[which.sig,
     	             grepl("counts", colnames(diff))]
     	dmrs <- dmrs[,!grepl("mean", colnames(dmrs))]
@@ -584,8 +593,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                                diff[which.sig,]$start, "-",
                                diff[which.sig,]$end)
   }
-
-
+  
+  message("simplifying sample names")
+  lab1 <- gsub(iter, "", lab1)
+  lab2 <- gsub(iter, "", lab2)
 	colnames(dmrs)[1:n1] <- paste0(lab1, "_", colnames(dmrs)[1:n1])
 	colnames(dmrs)[(n1 + 1):(n1 + n2)] <- paste0(lab2, "_", colnames(dmrs)[(n1 + 1):(n1 + n2)])
 	colnames(dmrs) <- gsub(".counts|.rpkm", "", colnames(dmrs))
@@ -594,9 +605,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   colnames(dmrs) <- gsub("_PDAC1", "", colnames(dmrs))
 
   # normalize 
+  message("normalizing...")
   counts.train <- diff[, grepl("counts", colnames(diff))]
   counts.train <- counts.train[, !grepl("mean", colnames(counts.train))]
-  which.norm <- which(rowSums(counts.train)>=10)
+  which.norm <- which(rowSums(counts.train)>=0.25*ncol(counts.train))
   d_train <- DGEList(counts=counts.train)
   d_train <- calcNormFactors(d_train[which.norm,], refColumn = 1)
   dmrs <- sweep(dmrs, MARGIN=2, 
@@ -615,14 +627,15 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
       subtype = c(type[names(type) != "rcc"], "#E69F00", "#56B4E9", "#009E73")
       names(subtype) = c("control", "clear cell", "papillary", "chromophobe")
       st <- colnames(dmrs)
-      st[rccsamps] <- meta$Histology[x]
+      st[rccsamps] <- as.character(meta$Histology[x])
       st[-rccsamps] <- "control"
 
       ha_column = HeatmapAnnotation(df = data.frame(Type = ifelse(grepl(lab1, colnames(dmrs)), lab1, lab2), 
         Subtype = st),
                                 col = list(Type = type, Subtype = subtype))
   }
-
+  
+  message("building heatmap")
 	ht = Heatmap(log(dmrs+1), name = "log(CPM+1)", 
 	             top_annotation = ha_column, col = ecolors,
 	             show_row_names = FALSE, show_column_names = colnames,
@@ -630,11 +643,15 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                column_title = paste0("Top ", top, 
                 ifelse(merge, " merged", "")))
 
-	pdf(heatmap.file, width=8)
+  w = 8
+  if((n1+n2)>75) w = 12
+	pdf(heatmap.file, width=w)
 	  draw(ht)
   dev.off()
 
   if(training < 1){
+
+   message("extracting test set")
    # overwrite ix1 and ix2 according to what is in diff (in case loading saved)
    grp1 <- gsub(paste0(lab1, "_"), "", 
     colnames(dmrs)[which(grepl(lab1, colnames(dmrs)))])
@@ -652,14 +669,14 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    # make test heatmap
    if (regulatory){
     if (length(obj1[-ix1])>0)
-     m1 <- MEDIPS.meth(MSet1 = obj1[-ix1])[unique(ol@from),]
+     m1 <- MEDIPS.meth(MSet1 = obj1[-ix1], CSet = CS, chr = chrs)[unique(ol@from),]
     if (length(obj2[-ix2])>0)
-     m2 <- MEDIPS.meth(MSet1 = obj2[-ix2])[unique(ol@from),]
+     m2 <- MEDIPS.meth(MSet1 = obj2[-ix2], CSet = CS, chr = chrs)[unique(ol@from),]
    }else{
     if (length(obj1[-ix1])>0)
-     m1 <- MEDIPS.meth(MSet1 = obj1[-ix1])
+     m1 <- MEDIPS.meth(MSet1 = obj1[-ix1], CSet = CS, chr = chrs)
     if (length(obj2[-ix2])>0)
-     m2 <- MEDIPS.meth(MSet1 = obj2[-ix2])
+     m2 <- MEDIPS.meth(MSet1 = obj2[-ix2], CSet = CS, chr = chrs)
    }
 
    if (length(obj1[-ix1])>0){
@@ -671,7 +688,13 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     m2 <- m2[,grepl("counts", colnames(m2)), drop = FALSE]
    }
 
-   counts.test <- cbind(m1,m2)
+   if (is.null(m1)){
+     counts.test <- m2
+   }else if (is.null(m2)){
+     counts.test <- m1
+   }else{
+     counts.test <- cbind(m1,m2)
+   }
    dmrs_new <- counts.test[which.sig,, drop=FALSE]
 
    # NORMALIZE - use same reference sample for train and test
@@ -716,7 +739,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 
    # binary classification
    # glmnet 
-
+   message("building predictive model for training set")
    library(glmnet)
    
    cvob1 = tryCatch({
@@ -733,14 +756,19 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
        })
    })
 
+   message("evaluating test set")
    # best coefficient
    if (length(cvob1)>0){
      new <- predict(cvob1, newx=t(log(dmrs_new+1)), type = "response", 
       s = "lambda.min")
-  
-     library(ROCR)
-     pred <- prediction(new, as.numeric(grepl(lab1, colnames(dmrs_new))))
-     auc <- unlist(performance(pred,"auc")@y.values)
+     
+     if (ncol(dmrs_new)>1){
+       library(ROCR)
+       pred <- prediction(new, as.numeric(grepl(lab1, colnames(dmrs_new))))
+       auc <- unlist(performance(pred,"auc")@y.values)
+     }else{
+      pred <- auc <- NA
+     }
    }else{
      auc <- NA
      pred <- new <- rep(NA, ncol(dmrs_new))
@@ -789,7 +817,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     subtype = c(type[names(type) != "rcc"], "#E69F00", "#56B4E9", "#009E73")
     names(subtype) = c("control", "clear cell", "papillary", "chromophobe")
     st <- colnames(dmrs_new)
-    st[rccsamps] <- meta$Histology[x]
+    st[rccsamps] <- as.character(meta$Histology[x])
     st[-rccsamps] <- "control"
 
     ha_column = HeatmapAnnotation(df = data.frame(Type = ifelse(grepl(lab1, colnames(dmrs_new)), lab1, lab2), 
@@ -814,7 +842,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    if(saveprobs){
      message("saving sample level prob table")
      write.table(ret_tab, quote=FALSE, row.names=FALSE,
-      file=file.path(out.dir, paste0("sampleprob_table_", lab1, "_", lab2,
+      file=file.path(out.dir, paste0("sampleprob_table_", lab1, iter, 
+        "_", lab2,
       "_top", top, ".txt")), 
       sep = "\t")
     }else{
@@ -837,7 +866,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 
   if(!is.null(add_samp)){
 
-    m1 <- MEDIPS.meth(MSet1 = add_samp)[which.sig,]
+    m1 <- MEDIPS.meth(MSet1 = add_samp, CSet = CS, chr = chrs)[which.sig,]
 
     m1 <- m1[,grepl("rpkm", colnames(m1)), drop = FALSE]
     m1 <- m1[,!grepl("mean", colnames(m1)), drop = FALSE]
@@ -868,7 +897,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   if (!is.null(validate1) || !is.null(validate2)){
   
    if (!is.null(validate1)){
-     m1 <- MEDIPS.meth(MSet1 = validate1)
+     m1 <- MEDIPS.meth(MSet1 = validate1, CSet = CS, chr = chrs)
      m1 <- m1[,grepl("rpkm", colnames(m1)), drop = FALSE]
      m1 <- m1[,!grepl("mean", colnames(m1)), drop = FALSE]
    }else{
@@ -876,7 +905,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    }
 
    if (!is.null(validate2)){
-     m2 <- MEDIPS.meth(MSet1 = validate2)
+     m2 <- MEDIPS.meth(MSet1 = validate2, CSet = CS, chr = chrs)
      m2 <- m2[,grepl("rpkm", colnames(m2)), drop = FALSE]
      m2 <- m2[,!grepl("mean", colnames(m2)), drop = FALSE]
    }else{
@@ -1047,7 +1076,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 
 
 
-if (iter == 1){
+if (iter == 74){
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
 	         lab1 = "rcc", lab2 = "control",
            out.dir = file.path(outdir, ".."), top = ntop)
@@ -1088,10 +1117,11 @@ if (iter == 1){
 # create pooled set
 
 # joint metadata for RCC samps
-meta <- rbind(data.frame("Sample number"=meta$`Sample number`,
+meta <- rbind(data.frame(`Sample number`=meta$`Sample number`,
                    Histology=meta$Histology),
-        data.frame("Sample number"=meta2$ID,
+        data.frame(`Sample number`=meta2$ID,
                    Histology=tolower(meta2$Histology)))
+colnames(meta)[1] <- "Sample number"
 
 # joint medips objs
 
@@ -1102,7 +1132,7 @@ medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == 
 
 
 
-if (iter ==1){
+if (iter == 75){
 
 dir.create(file.path(outdir, "../pooled"))
 
