@@ -153,8 +153,9 @@ meta <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Keegan - RCC 
 meta2 <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20200108_Sample List.xlsx")
 CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.jan2020[[1]])
 
-m2 <- data.frame(ID=gsub(".sorted.bam", "", sapply(medip.jan2020, function(x) x@sample_name))) %>%
-left_join(meta2, by = "ID")
+m2 <- data.frame(ID=gsub(".sorted.bam", "", 
+  sapply(medip.jan2020, function(x) x@sample_name))) %>%
+  left_join(meta2, by = "ID")
 
 # summary plots - make for all sets
 # for comparison 
@@ -435,6 +436,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     ix1 <- 1:n1
     ix2 <- 1:n2
 
+    prob.table.file <- file.path(out.dir,
+      paste0("sampleprob_table_", lab1, "_", lab2, "_top", top, ".txt"))
+    
     if (training < 1){
       diff.file <- file.path(out.dir, paste0(lab1, ".", lab2, ".diff.training_",
       	                                    training, ".rds"))
@@ -487,6 +491,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 	}else{
 	  diff <- readRDS(file=diff.file)
 	}
+  
+  if (ncol(diff) != 3+2*(n1+n2)+11)
+    message("WARNING; diff has ", ncol(diff), " columns. ",
+      "Expecting ", 3+2*(n1+n2)+11, ".")
 
 	colnames(diff)[3] <- "end"
 
@@ -812,6 +820,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 
    if (lab1 == "rcc" || lab2 == "rcc"){
     rccsamps <- which(grepl("rcc", colnames(dmrs_new)))
+    if (length(rccsamps) > 0){
     x <- match(gsub("rcc_", "", colnames(dmrs_new)[rccsamps]), 
       meta$`Sample number`)
     subtype = c(type[names(type) != "rcc"], "#E69F00", "#56B4E9", "#009E73")
@@ -826,6 +835,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
       Subtype = subtype,
       Prob = probcol,
       Class = classcol))
+     }
    }
 
    ht = Heatmap(log(dmrs_new+1), name = "log(CPM+1)", 
@@ -842,9 +852,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    if(saveprobs){
      message("saving sample level prob table")
      write.table(ret_tab, quote=FALSE, row.names=FALSE,
-      file=file.path(out.dir, paste0("sampleprob_table_", lab1, iter, 
-        "_", lab2,
-      "_top", top, ".txt")), 
+      file= prob.table.file, 
       sep = "\t")
     }else{
      message("not saving sample level prob table")
@@ -1149,7 +1157,9 @@ compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
 # leave-one-out
 
 # rcc plasma
-if(iter <= length(medip.rcc)){
+iter
+length(medip.rcc)
+if(as.numeric(iter) <= length(medip.rcc)){
   names(iter) <- "obj1"
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
              holdout = iter,
@@ -1158,7 +1168,9 @@ if(iter <= length(medip.rcc)){
 }
 
 # control plasma
-if(iter <= length(medip.control)){
+iter
+length(medip.control)
+if(as.numeric(iter) <= length(medip.control)){
   names(iter) <- "obj2"
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
              holdout = iter,
@@ -1168,7 +1180,9 @@ if(iter <= length(medip.control)){
 
 
 # rcc urine
-if(iter <= length(medip.urineR)){
+iter
+length(medip.urineR)
+if(as.numeric(iter) <= length(medip.urineR)){
   names(iter) <- "obj1"
   compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
              holdout = iter,
@@ -1177,7 +1191,9 @@ if(iter <= length(medip.urineR)){
 }
 
 # control urine
-if(iter <= length(medip.urineC)){
+iter
+length(medip.urineC)
+if(as.numeric(iter) <= length(medip.urineC)){
   names(iter) <- "obj2"
   compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
              holdout = iter,
