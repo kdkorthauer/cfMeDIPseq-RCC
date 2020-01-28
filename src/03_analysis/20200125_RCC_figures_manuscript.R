@@ -29,11 +29,10 @@ top <- 300
 ws <- 300
 merge <- FALSE
 res <- NULL
-dir.create(savedir, showWarnings = FALSE)
 
 # dir where binned medips objects of all samples are saved
 outdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
-savedir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
+savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 
 # read in spread sheet with stage/grade/histology
 grade <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Stage-Grade-Histology Analysis.xlsx")
@@ -133,15 +132,17 @@ plotVolcano <- function(diff.file, n1, n2, sig=0.1){
 }
 
 
-volcano_plasma <- plotVolcano(diff.file =file.path(outdir, "rcc.control.diff.rds"), 
+volcano_plasma <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds"), 
   n1 = length(medip.rcc), 
   n2 = length(medip.control))
-ggsave(file.path(savedir, "volcano_plasma.pdf"), width=10, height=6)
+volcano_plasma
+ggsave(file.path(savedir, "volcano_plasma.pdf"), width=5, height=4)
 
-volcano_urine <- plotVolcano(diff.file =file.path(outdir, "urineR.urineC.diff.rds"), 
+volcano_urine <- plotVolcano(diff.file =file.path(savedir, "urineR.urineC.diff.rds"), 
   n1 = length(medip.urineR), 
-  n2 = length(medip.urineC), sig = 0.25)
-ggsave(file.path(savedir, "volcano_urine.pdf"), width=10, height=6)
+  n2 = length(medip.urineC))
+volcano_urine
+ggsave(file.path(savedir, "volcano_urine.pdf"), width=5, height=4)
 
 ################# AUC
 
@@ -798,21 +799,23 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
 
 if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   ### urine
-  df <- cbind(depths(medip.urineR, CS, "urineR"),
-    depths(medip.urineC, CS, "urineC"))
+
   # include all sig rows
   diff.file =file.path(savedir, "urineR.urineC.diff.rds")
   diff <- readRDS(file=diff.file)
   which.up <- which(diff$logFC > 0)
   which.down <- which(diff$logFC < 0)
-  which.sig.up <- which(rank(diff$limma.adj.p.value[which.up], 
+  which.sig.up <- which(rank(diff$P.Value[which.up], 
      ties.method = "random") <= as.numeric(top)/2)
 
-  which.sig.down <- which(rank(diff$limma.adj.p.value[which.down], 
+  which.sig.down <- which(rank(diff$P.Value[which.down], 
      ties.method = "random") <= as.numeric(top)/2)
 
   which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
   rm(diff)
+
+  df <- cbind(depths(medip.urineR, CS, "urineR"),
+    depths(medip.urineC, CS, "urineC"))
   df <- df[which.sig,] 
 
   grp <- gsub("_.*", "", colnames(df))
@@ -820,28 +823,29 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   x <- match(ids, meta$`Sample number`)
   subtype <- ifelse(grp == "rcc" & ids %in% meta$`Sample number`,
     meta$Histology[x], NA)
-
+  batch <- ifelse(grepl("S", colnames(df)), 1, 2)
  
   pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
   tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
     mutate(type = grp,
            subtype = subtype,
-           id = ids) %>%
+           id = ids,
+           Batch = as.factor(batch)) %>%
     mutate(Type = ifelse(type == "urineR", "RCC", "Control"))
     
   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
 
   ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type), size = 2) +
+    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type, shape=Batch), size = 2) +
     scale_color_manual(values = colors) 
   ggsave(file.path(savedir, "PCA_1_2_urine_top300.pdf"), width = 4.5, height = 3.5)
 
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type)) +
+  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type, shape=Batch)) +
     geom_point(size = 2)+
     scale_color_manual(values = colors)
   ggsave(file.path(savedir, "PCA_2_3_urine_top300.pdf"), width = 4.5, height = 3.5)
 
-  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type)) +
+  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type, shape=Batch)) +
     geom_point(size = 2)+
     scale_color_manual(values = colors)
   ggsave(file.path(savedir, "PCA_1_3_urine_top300.pdf"), width = 4.5, height = 3.5)
@@ -849,11 +853,12 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   pdf(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"), width = 4.5, height = 4.5)
    colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
    colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   scatterplot3d(tidydf[,1:3], pch =20, 
+   shape <- c(20,17)[batch]
+   scatterplot3d(tidydf[,1:3], pch = shape, 
      xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
      color=colors)
-   legend(0,-3.92, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = 20, 
+   legend(0,-5.92, legend = levels(as.factor(tidydf$Type)),
+      col =  c("#E69F00", "#56B4E9"), pch = c(20,17), 
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
   dev.off()
 
