@@ -14,7 +14,8 @@ MEDIPS.meth = function(
 		CNV=FALSE,
 		MeDIP=FALSE,
 		minRowSum=10,
-		diffnorm="tmm"
+		diffnorm="tmm",
+		batch=NULL
 		)
 {
 	nMSets1 = length(MSet1)	
@@ -29,6 +30,8 @@ MEDIPS.meth = function(
 	
 	##Proof of correctness
 	#######################
+	if (!is.null(batch) & diff.method != "limma")
+	    stop('Batch correction only implemented in limma')	
 	if(MeDIP){
 		if(class(CSet)!="COUPLINGset"){stop("You have to state a COUPLINGset object!")}
 	}
@@ -249,7 +252,7 @@ MEDIPS.meth = function(
 		    if(diff.method=="edgeR"){
 			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="edgeR", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm)
 			}else{
-			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm)
+			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch)
 			}
 		}else if(diff.method=="ttest"){
 
@@ -457,7 +460,7 @@ MEDIPS.meth = function(
 
 
 
-MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets1=NULL, nMSets2=NULL, n.r.M1=n.r.M1, n.r.M2=n.r.M2, p.adj="bonferroni", MeDIP, minRowSum=10, diffnorm="tmm")
+MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets1=NULL, nMSets2=NULL, n.r.M1=n.r.M1, n.r.M2=n.r.M2, p.adj="bonferroni", MeDIP, minRowSum=10, diffnorm="tmm", batch=NULL)
 {
 	##edgeR##
 	#########
@@ -535,7 +538,9 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 		edRObj.group=c(rep(1, nMSets1), rep(2, nMSets2))
 		edRObj.length=c(n.r.M1, n.r.M2)
 		#d <- edgeR::DGEList(counts = values[filter,], group = edRObj.group, lib.size=edRObj.length)
-		d <- edgeR::DGEList(counts = values[filter,], group = edRObj.group)
+
+		d <- edgeR::DGEList(counts = values[filter,], group = edRObj.group)			
+
 
 		if(diffnorm=="tmm"){
 			cat("Apply trimmed mean of M-values (TMM) for library sizes normalization...\n")	
@@ -551,7 +556,13 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 
 		if(nMSets1!=1 | nMSets2!=1){
 			edRObj.group <- as.factor(edRObj.group)
-			design <- model.matrix(~edRObj.group)
+			if (!is.null(batch)){
+			  batch <- as.factor(batch)
+			  design <- model.matrix(~edRObj.group + batch)
+
+			}else{
+			  design <- model.matrix(~edRObj.group)
+			}
 
 			#cat("Fitting limma-trend...\n")			
 		  	#logCPM <- edgeR::cpm(d, log=TRUE, prior.count=1)
