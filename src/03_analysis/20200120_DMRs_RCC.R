@@ -21,7 +21,7 @@ library(edgeR)
 theme_set(theme_bw())
 
 # source modified MEDIPS functions
-source("/arc/project/st-kdkortha-1/cfMeDIPseq/src/03_analysis/20190722_limmamedips.R")
+source("/arc/project/st-kdkortha-1/cfMeDIPseq-RCC/src/03_analysis/20190722_limmamedips.R")
 
 # get windowsize
 ws <- as.numeric(Sys.getenv("WINDOWSIZE"))
@@ -217,159 +217,6 @@ ggplot(df, aes(x = pctNonzeroCov*100)) +
 ggsave(file.path(outdir, "../PctBinswithNonzeroCov_jan2020.pdf"))
 
 
-# pca plots
-depths <- function(mdobjlist, CS, type){
-  depth <- data.frame(sapply(mdobjlist, function(x){
-  	  x@genome_count[CS@genome_CF > 0]
-  }))
-  colnames(depth) <- sapply(mdobjlist, function(x){ 
-  	gsub(".bam|.sorted.bam", "", x@sample_name)})
-  colnames(depth) <- gsub("_", "", colnames(depth))
-  colnames(depth) <- paste0(type, "_", colnames(depth))
-  return(depth)
-}
-
-if (!file.exists(file.path(outdir, "../PCA_2_3_combined_urine.pdf"))){
-  
-  # JAN2020 plasma
-
-  df <- cbind(depths(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],
-                      CS=CS, "rcc_plasma"),
-  depths(medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"], 
-                      CS=CS, "control_plasma"))
-
-  df <- df %>%
-    filter(rowMeans(df > 0) > 0.20)
-  df <- df %>%
-    filter(rowMeans(df) > 1) 
-
-  # normalize
-  sf <- DESeq2::estimateSizeFactorsForMatrix(df)
-  df <- sweep(df, MARGIN=2, sf, `/`)
-
-  grp <- gsub("_R.*", "", colnames(df))
-  ids <- gsub("rcc_urine_|control_urine_|rcc_plasma_|control_plasma_", "", colnames(df))
-
-  pcs <- Morpho::prcompfast(t(log(df+0.01)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           id = ids) 
-  
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = type), size = 2)  
-  ggsave(file.path(outdir, "../PCA_1_2_jan2020_plasma.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = type)) +
-    geom_point(size = 2)
-  ggsave(file.path(outdir, "../PCA_2_3_jan2020_plasma.pdf"), width = 4.5, height = 3.5)
-  
-  
-  # JAN2020 urine
-
-  df <- cbind(depths(medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"],
-                      CS=CS, "rcc_urine"),
-  depths(medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"],
-                      CS=CS, "control_urine"))
-
-  # remove R99 (>16% outlier for pct reads in bins with no CpGs)
-  df <- df[,-which(grepl("R99", colnames(df)))]  
-
-  df <- df %>%
-    filter(rowMeans(df > 0) > 0.20)
-  df <- df %>%
-    filter(rowMeans(df) > 1) 
-
-  # normalize
-  sf <- DESeq2::estimateSizeFactorsForMatrix(df)
-  df <- sweep(df, MARGIN=2, sf, `/`)
-
-  grp <- gsub("_R.*", "", colnames(df))
-  ids <- gsub("rcc_urine_|control_urine_|rcc_plasma_|control_plasma_", "", colnames(df))
-
-  pcs <- Morpho::prcompfast(t(log(df+0.01)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           id = ids) 
-  
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = type), size = 2)  
-  ggsave(file.path(outdir, "../PCA_1_2_jan2020_urine.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = type)) +
-    geom_point(size = 2)
-  ggsave(file.path(outdir, "../PCA_2_3_jan2020_urine.pdf"), width = 4.5, height = 3.5)
-  
-
-
-
-  # JAN2020 Plus Original cohort (plasma)
-
-   df <- cbind(depths(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],
-                      CS=CS, "rccNew"),
-    depths(medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"], 
-                      CS=CS, "controlNew"),
-    depths(medip.rcc, CS, "rcc"),
-    depths(medip.control, CS, "control"))
-  
-  df <- df %>%
-    filter(rowMeans(df > 0) > 0.20)
-  df <- df %>%
-    filter(rowMeans(df) > 1) 
-
-  # normalize
-  sf <- DESeq2::estimateSizeFactorsForMatrix(df)
-  df <- sweep(df, MARGIN=2, sf, `/`)
-
-  grp <- gsub("_R.*|_S.*", "", colnames(df))
-  ids <- gsub("rcc_urine_|control_urine_|rcc_plasma_|control_plasma_", "", colnames(df))
-
-  pcs <- Morpho::prcompfast(t(log(df+0.01)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           id = ids) 
-  
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = type), size = 2)  
-  ggsave(file.path(outdir, "../PCA_1_2_combined_plasma.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = type)) +
-    geom_point(size = 2)
-  ggsave(file.path(outdir, "../PCA_2_3_combined_plasma.pdf"), width = 4.5, height = 3.5)
-
-  # combined urine
-  df_urine <- cbind(depths(medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"],
-                      CS=CS, "urineR_new"),
-  depths(medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"],
-                      CS=CS, "urineC_new"),
-    depths(medip.urineR, CS, "urineR"),
-    depths(medip.urineC, CS, "urineC"))
-
-  df <- df %>%
-    filter(rowMeans(df > 0) > 0.20)
-  df <- df %>%
-    filter(rowMeans(df) > 1) 
-
-  # normalize
-  sf <- DESeq2::estimateSizeFactorsForMatrix(df)
-  df <- sweep(df, MARGIN=2, sf, `/`)
-
-  grp <- gsub("_R.*|_S.*", "", colnames(df))
-  ids <- gsub("rcc_urine_|control_urine_|rcc_plasma_|control_plasma_", "", colnames(df))
-
-  pcs <- Morpho::prcompfast(t(log(df+0.01)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           id = ids) 
-  
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = type), size = 2)  
-  ggsave(file.path(outdir, "../PCA_1_2_combined_urine.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = type)) +
-    geom_point(size = 2)
-  ggsave(file.path(outdir, "../PCA_2_3_combined_urine.pdf"), width = 4.5, height = 3.5)
-
-}
 }
 
 
@@ -413,7 +260,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                        out.dir = outdir, 
                        validate_lab = NULL,
                        saveprobs=TRUE,
-                       holdout=NULL){
+                       holdout=NULL,
+                       batch =NULL,
+                       detRate= FALSE
+                  ){
 
     set.seed(20190814/as.numeric(iter))
 
@@ -506,7 +356,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 	if (!file.exists(diff.file)){
     diff = MEDIPS.meth(MSet1 = obj1[ix1], MSet2 = obj2[ix2],
 	          CSet = CS, diff.method = "limma", chr = chrs,
-		        p.adj = "BH", MeDIP = mdip.opt, minRowSum = 0.2*(n1+n2))
+		        p.adj = "BH", MeDIP = mdip.opt, minRowSum = 0.2*(n1+n2),
+            detRate=detRate, batch=batch)
 	  saveRDS(diff, file = diff.file)
 	}else{
 	  diff <- readRDS(file=diff.file)
@@ -659,8 +510,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 	                              col = list(Type = type))
 
   # grab metadata from "master" spreadsheet
-  x <- match(gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs)), 
-        master$`Sample number`)
+  x <- match(colnames(dmrs),
+         paste0(ifelse(master$Status == "RCC", paste0(lab1, "_"),  paste0(lab2, "_")), 
+                    master$`Sample number`))
   if (sum(is.na(x))>0)
     message("Warning: can't retrieve meta data for samples ", 
       gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs))[which(is.na(x))])
@@ -874,11 +726,12 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 
 
   # grab metadata from "master" spreadsheet
-  x <- match(gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs)), 
-        master$`Sample number`)
+  x <- match(colnames(dmrs_new),
+         paste0(ifelse(master$Status == "RCC", paste0(lab1, "_"),  paste0(lab2, "_")), 
+                    master$`Sample number`))
   if (sum(is.na(x))>0)
     message("Warning: can't retrieve meta data for samples ", 
-      gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs))[which(is.na(x))])
+      gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs_new))[which(is.na(x))])
 
   subtype = c(type[!grepl("urineR|rcc", names(type))], "#E69F00", "#56B4E9", "#009E73", "white")
   names(subtype) = c("control", "clear cell", "papillary", "chromophobe", "other")
@@ -895,7 +748,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   
   if (length(unique(st))>2){
       ha_column = HeatmapAnnotation(df = 
-            data.frame(Type = ifelse(grepl(lab1, colnames(dmrs)), lab1, lab2), 
+            data.frame(Type = ifelse(grepl(lab1, colnames(dmrs_new)), lab1, lab2), 
                        Subtype = st,
                        Batch = bt,
                        Institution = inst,
@@ -909,7 +762,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                                   Class = classcol))
   }else{
       ha_column = HeatmapAnnotation(df = 
-            data.frame(Type = ifelse(grepl(lab1, colnames(dmrs)), lab1, lab2),
+            data.frame(Type = ifelse(grepl(lab1, colnames(dmrs_new)), lab1, lab2),
                        Batch = bt,
                        Institution = inst,
                        Prob = ret_tab$class_prob,
@@ -1043,13 +896,16 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    # binary classification
    # glmnet 
 
+  
+
    library(glmnet)
-   cvob1=cv.glmnet(x=t(log(dmrs+1)),y=as.numeric(grepl(lab1, colnames(dmrs))),
+   cvob1=cv.glmnet(x=t(log(dmrs+1)),
+      y=as.numeric(grepl(lab1, colnames(dmrs))),
      family="binomial", alpha=0.5, 
      nfolds = 3, lambda = seq(0.01,0.05,by = 0.01), standardize=FALSE)
 
    # best coefficient
-   new <- predict(cvob1, newx=t(dmrs_new), type = "response", s = "lambda.min")
+   new <- predict(cvob1, newx=t(log(dmrs_new+1)), type = "response", s = "lambda.min")
   
    library(ROCR)
    fact <- as.factor(as.numeric(grepl(lab1, colnames(dmrs_new))))
@@ -1134,11 +990,12 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    names(classcol) <- c(lab1, gsub("_partial", "",lab2))
 
    # grab metadata from "master" spreadsheet
-  x <- match(gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs)), 
-        master$`Sample number`)
+  x <- match(colnames(dmrs_new),
+         paste0(ifelse(master$Status == "RCC", paste0(lab1, "_"),  paste0(lab2, "_")), 
+                    master$`Sample number`))
   if (sum(is.na(x))>0)
     message("Warning: can't retrieve meta data for samples ", 
-      gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs))[which(is.na(x))])
+      gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs_new))[which(is.na(x))])
 
   subtype = c(type[!grepl("urineR|rcc", names(type))], "#E69F00", "#56B4E9", "#009E73", "white")
   names(subtype) = c("control", "clear cell", "papillary", "chromophobe", "other")
@@ -1349,8 +1206,8 @@ colnames(meta)[1] <- "Sample number"
 
 # remove three RCCMet samples since don't have histology
 metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
-x <- match( metids, master$ID )
-excl <- master$ID[x][grepl("Exclude", master$Inclusion[x])]
+x <- match( metids, master$"Sample number" )
+excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
 if(length(excl) > 0)
   medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
 
@@ -1410,7 +1267,7 @@ if(as.numeric(iter) <= length(medip.urineR)){
   compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
              holdout = iter,
              lab1 = paste0("urineR",iter), lab2 = "urineC",
-             out.dir = file.path(outdir), top = ntop)
+             out.dir = file.path(outdir_m), top = ntop)
 }
 
 # control urine
@@ -1421,6 +1278,6 @@ if(as.numeric(iter) <= length(medip.urineC)){
   compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
              holdout = iter,
              lab1 = "urineR", lab2 = paste0("urineC",iter),
-             out.dir = file.path(outdir), top = ntop)
+             out.dir = file.path(outdir_m), top = ntop)
 }
 

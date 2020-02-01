@@ -15,7 +15,8 @@ MEDIPS.meth = function(
 		MeDIP=FALSE,
 		minRowSum=10,
 		diffnorm="tmm",
-		batch=NULL
+		batch=NULL,
+		detRate=FALSE
 		)
 {
 	nMSets1 = length(MSet1)	
@@ -32,9 +33,15 @@ MEDIPS.meth = function(
 	#######################
 	if (!is.null(batch) & diff.method != "limma")
 	    stop('Batch correction only implemented in limma')	
+
 	if(MeDIP){
 		if(class(CSet)!="COUPLINGset"){stop("You have to state a COUPLINGset object!")}
 	}
+
+   if (detRate & diff.method != "limma")
+	    stop('Detection rate adjustment only implemented in limma')	
+
+
 
 	controlSet = MSet1[[1]]
 
@@ -252,7 +259,7 @@ MEDIPS.meth = function(
 		    if(diff.method=="edgeR"){
 			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="edgeR", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm)
 			}else{
-			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch)
+			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch, detRate=detRate)
 			}
 		}else if(diff.method=="ttest"){
 
@@ -460,7 +467,8 @@ MEDIPS.meth = function(
 
 
 
-MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets1=NULL, nMSets2=NULL, n.r.M1=n.r.M1, n.r.M2=n.r.M2, p.adj="bonferroni", MeDIP, minRowSum=10, diffnorm="tmm", batch=NULL)
+MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets1=NULL, nMSets2=NULL, n.r.M1=n.r.M1, n.r.M2=n.r.M2, p.adj="bonferroni", MeDIP, minRowSum=10, diffnorm="tmm", batch=NULL,
+	detRate = FALSE)
 {
 	##edgeR##
 	#########
@@ -554,14 +562,25 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 	    	stop("diffnorm method unknown.")
 	    }
 
+	    if(detRate)
+	    	pctZero <- colMeans2(values==0)
+
 		if(nMSets1!=1 | nMSets2!=1){
 			edRObj.group <- as.factor(edRObj.group)
 			if (!is.null(batch)){
-			  batch <- as.factor(batch)
-			  design <- model.matrix(~edRObj.group + batch)
+              batch <- as.factor(batch)
+              if(detRate){
+               design <- model.matrix(~edRObj.group + batch + pctZero)
+              }else{
+			   design <- model.matrix(~edRObj.group + batch)
+			  }
 
 			}else{
-			  design <- model.matrix(~edRObj.group)
+              if(detRate){
+               design <- model.matrix(~edRObj.group + pctZero)
+              }else{
+			   design <- model.matrix(~edRObj.group)
+			  }
 			}
 
 			#cat("Fitting limma-trend...\n")			

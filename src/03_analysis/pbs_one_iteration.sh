@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -l walltime=4:00:00,select=1:ncpus=1:mem=95gb
+#PBS -l walltime=4:00:00,select=1:ncpus=1:mem=150gb
 #PBS -N medip
 #PBS -V
 #PBS -A st-kdkortha-1
