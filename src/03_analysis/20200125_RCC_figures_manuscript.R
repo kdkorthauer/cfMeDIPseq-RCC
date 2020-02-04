@@ -191,16 +191,12 @@ ggsave(file.path(savedir_met, "volcano_plasma_plusmet.pdf"), width=5, height=4)
 
 # file list
 itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl")  
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled_c")
 
 files <- list.files(file.path(itdir), pattern = "vRCCmet_top300.txt", recursive = TRUE, 
  full.names = TRUE)
 files <- files[grepl("iter", files)]
 
-inf <- file.info(files)
-f <- basename(files)
-df <- cbind(f,inf)[order(inf$mtime),c(1,5)]
-rownames(df) <- NULL
-df
 
 tmp <- files %>%
   purrr::map(read_tsv)
@@ -212,7 +208,8 @@ tmp <- lapply(seq_along(files),
   }) 
 tmp <- tmp %>%
   do.call("rbind", .) 
-tmp$iteration = substr(tmp$filename, 60, 62)
+idx <- stringr::str_locate(tmp$filename[1], "iter_")[2]
+tmp$iteration = substr(tmp$filename, idx+1, idx+3)
 
 # auc table
 auc_summary <- tmp %>% 
@@ -224,7 +221,7 @@ auc_summary <- tmp %>%
             lowerAUC = meanAUC - qnorm(0.975)*sdAUC/sqrt(n),
             upperAUC = meanAUC + qnorm(0.975)*sdAUC/sqrt(n))
 
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
+
 write.table(auc_summary, quote=FALSE, row.names=FALSE,
   file=file.path(savedir_met, "auc_summary_100iter_splitControls.txt"))
 
