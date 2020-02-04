@@ -32,7 +32,7 @@ res <- NULL
 
 # dir where binned medips objects of all samples are saved
 outdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
-savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
+savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled")
 
 # read in spread sheet with stage/grade/histology
 grade <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Stage-Grade-Histology Analysis.xlsx")
@@ -174,14 +174,14 @@ volcano_urine
 ggsave(file.path(savedir, "volcano_urine.pdf"), width=5, height=4)
 
 
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled_c")
 volcano_met <- plotVolcano(diff.file =file.path(savedir_met, "rcc.control.diff.rds"), 
   sig = 0.05)
 volcano_met
 ggsave(file.path(savedir_met, "volcano_plasma_metTraining.pdf"), width=6, height=4)
 
 
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled_m")
 volcano_met <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds"),
   sig = 0.05)
 volcano_met
@@ -190,11 +190,17 @@ ggsave(file.path(savedir_met, "volcano_plasma_plusmet.pdf"), width=5, height=4)
 ################# AUC summary 
 
 # file list
-itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
+itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl")  
 
 files <- list.files(file.path(itdir), pattern = "vRCCmet_top300.txt", recursive = TRUE, 
  full.names = TRUE)
 files <- files[grepl("iter", files)]
+
+inf <- file.info(files)
+f <- basename(files)
+df <- cbind(f,inf)[order(inf$mtime),c(1,5)]
+rownames(df) <- NULL
+df
 
 tmp <- files %>%
   purrr::map(read_tsv)
@@ -206,9 +212,7 @@ tmp <- lapply(seq_along(files),
   }) 
 tmp <- tmp %>%
   do.call("rbind", .) 
-tmp$iteration = substr(tmp$filename, 55, 57)
-
-
+tmp$iteration = substr(tmp$filename, 60, 62)
 
 # auc table
 auc_summary <- tmp %>% 

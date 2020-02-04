@@ -33,7 +33,7 @@ medipdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
 dir.create(medipdir, showWarnings = FALSE)
 
 # outdir to leave-one-out output
-outdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/hold_", str_pad(iter, 3, pad = "0"))
+outdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/hold_", str_pad(iter, 3, pad = "0"))
 dir.create(outdir, showWarnings = FALSE)
 
 outdir_m <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/hold_m_", str_pad(iter, 3, pad = "0"))
@@ -190,10 +190,13 @@ noCpGcov <- function(mdobjlist, CS, type){
   pctNonzeroCov <- sapply(mdobjlist, function(x){
   	  sum(x@genome_count > 0) / length(x@genome_count)
   })
+  lab = gsub(".sorted.bam", "", 
+  sapply(mdobjlist, function(x) x@sample_name))
 
   data.frame(pctNoCpG = pctNoCpG,
   	pctNonzeroCov = pctNonzeroCov,
-  	type = type)
+  	type = type,
+    lab=lab)
 }
 
 df <- rbind(noCpGcov(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],
@@ -961,7 +964,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      message("not saving sample level prob table")
     }
 
-  ret_tab <- mutate(ret_tab, true_label = ifelse(true_label == "rcc", 
+  ret_tab <- mutate(ret_tab, true_label = ifelse(true_label %in% c("rcc","urineR"), 
     "RCC", "Control"))
   cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
   if(grepl("met", validate_lab)){
@@ -1068,9 +1071,30 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 }
 
 
+# exclude 10 samples from controls
 
-if (iter == 105){
-  if(FALSE){
+l1 <- gsub(".sorted.bam", "", 
+  sapply(medip.control, function(x) x@sample_name))
+medip.control <- medip.control[!grepl("S035|S036|S037|S038|S039", l1)]
+l2 <- gsub(".sorted.bam", "", 
+  sapply(medip.jan2020, function(x) x@sample_name))
+medip.jan2020 <- medip.jan2020[!grepl("R1_EMI|R103_AF|R73_GD|R3_CS|R9_EM", l2)]
+
+m2 <- data.frame(ID=gsub(".sorted.bam", "", 
+  sapply(medip.jan2020, function(x) x@sample_name))) %>%
+  left_join(meta2, by = "ID")
+
+
+# remove three RCCMet samples since don't have histology
+metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
+x <- match( metids, master$"Sample number" )
+excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
+if(length(excl) > 0)
+  medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
+
+
+if (iter == 1){
+
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
 	         lab1 = "rcc", lab2 = "control",
            out.dir = file.path(outdir, ".."), top = ntop)
@@ -1088,6 +1112,7 @@ if (iter == 105){
            obj2 = medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"],
            lab1 = "urineR_New", lab2 = "urineC_New",
            out.dir = file.path(outdir, ".."), top = ntop)
+
 
   ## train on orig, predict on new
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
@@ -1147,7 +1172,6 @@ if (iter == 105){
   file=file.path(out.dir = file.path(outdir, ".."), 
     paste0("validation_accuracy_RCCmet_table_top", ntop, ".txt")), 
     sep = "\t")
-  }
 
 
   # repeat prev but with FULL control group
@@ -1165,7 +1189,8 @@ if (iter == 105){
 
 if(iter <= 100){
 
-  outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/iter_", 
+  outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
+    ws, "_excl/iter_", 
     str_pad(iter, 3, pad = "0"))
   dir.create(outdir_iterm, showWarnings = FALSE)
 
@@ -1195,6 +1220,7 @@ if(iter <= 100){
 
 }
 
+if(FALSE){
 # create pooled set
 
 # joint metadata for RCC samps
@@ -1203,13 +1229,6 @@ meta <- rbind(data.frame(`Sample number`=meta$`Sample number`,
         data.frame(`Sample number`=meta2$ID,
                    Histology=tolower(meta2$Histology)))
 colnames(meta)[1] <- "Sample number"
-
-# remove three RCCMet samples since don't have histology
-metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
-x <- match( metids, master$"Sample number" )
-excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
-if(length(excl) > 0)
-  medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
 
 # joint medips objs
 
@@ -1280,4 +1299,4 @@ if(as.numeric(iter) <= length(medip.urineC)){
              lab1 = "urineR", lab2 = paste0("urineC",iter),
              out.dir = file.path(outdir_m), top = ntop)
 }
-
+}
