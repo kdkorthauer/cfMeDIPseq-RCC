@@ -33,7 +33,7 @@ medipdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
 dir.create(medipdir, showWarnings = FALSE)
 
 # outdir to leave-one-out output
-outdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/hold_", str_pad(iter, 3, pad = "0"))
+outdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/hold_", str_pad(iter, 3, pad = "0"))
 dir.create(outdir, showWarnings = FALSE)
 
 outdir_m <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/hold_m_", str_pad(iter, 3, pad = "0"))
@@ -1071,20 +1071,6 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 }
 
 
-# exclude 10 samples from controls
-
-l1 <- gsub(".sorted.bam", "", 
-  sapply(medip.control, function(x) x@sample_name))
-medip.control <- medip.control[!grepl("S035|S036|S037|S038|S039", l1)]
-l2 <- gsub(".sorted.bam", "", 
-  sapply(medip.jan2020, function(x) x@sample_name))
-medip.jan2020 <- medip.jan2020[!grepl("R1_EMI|R103_AF|R73_GD|R3_CS|R9_EM", l2)]
-
-m2 <- data.frame(ID=gsub(".sorted.bam", "", 
-  sapply(medip.jan2020, function(x) x@sample_name))) %>%
-  left_join(meta2, by = "ID")
-
-
 # remove three RCCMet samples since don't have histology
 metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
 x <- match( metids, master$"Sample number" )
@@ -1190,7 +1176,7 @@ if (iter == 1){
 if(iter <= 100){
 
   outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
-    ws, "_excl/iter_", 
+    ws, "/iter_", 
     str_pad(iter, 3, pad = "0"))
   dir.create(outdir_iterm, showWarnings = FALSE)
 
@@ -1220,7 +1206,6 @@ if(iter <= 100){
 
 }
 
-if(FALSE){
 # create pooled set
 
 # joint metadata for RCC samps
@@ -1299,4 +1284,4 @@ if(as.numeric(iter) <= length(medip.urineC)){
              lab1 = "urineR", lab2 = paste0("urineC",iter),
              out.dir = file.path(outdir_m), top = ntop)
 }
-}
+

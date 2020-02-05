@@ -32,7 +32,7 @@ res <- NULL
 
 # dir where binned medips objects of all samples are saved
 outdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
-savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled")
+savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 
 # read in spread sheet with stage/grade/histology
 grade <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Stage-Grade-Histology Analysis.xlsx")
@@ -97,7 +97,8 @@ if(length(excl) > 0)
 # joint medips objs
 
 medip.rcc_B1 <- medip.rcc
-medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],medip.rcc_M)
+medip.rcc_noM <-  c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
+medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], medip.rcc_M)
 medip.control <- c(medip.control, medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
 medip.urineR <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"])
 medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"])
@@ -174,14 +175,14 @@ volcano_urine
 ggsave(file.path(savedir, "volcano_urine.pdf"), width=5, height=4)
 
 
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled_c")
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
 volcano_met <- plotVolcano(diff.file =file.path(savedir_met, "rcc.control.diff.rds"), 
   sig = 0.05)
 volcano_met
 ggsave(file.path(savedir_met, "volcano_plasma_metTraining.pdf"), width=6, height=4)
 
 
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled_m")
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
 volcano_met <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds"),
   sig = 0.05)
 volcano_met
@@ -190,8 +191,8 @@ ggsave(file.path(savedir_met, "volcano_plasma_plusmet.pdf"), width=5, height=4)
 ################# AUC summary 
 
 # file list
-itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl")  
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "_excl/pooled_c")
+itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
 
 files <- list.files(file.path(itdir), pattern = "vRCCmet_top300.txt", recursive = TRUE, 
  full.names = TRUE)
@@ -741,8 +742,15 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
   pctzero_overall <- colMeans2(df==0)
 
   # include all sig rows
-  diff.file =file.path(savedir, "../pooled_m", "rcc.control.diff.rds")
+  savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
+
+
+  diff.file =file.path(savedir, "rcc.control.diff.rds")
   diff <- readRDS(file=diff.file)
+
+  message("WARNING; diff has ", ncol(diff), " columns. ",
+    "Expecting ", 3+2*(length(medip.rcc)+length(medip.control))+11, ".")
+
   which.up <- which(diff$logFC > 0)
   which.down <- which(diff$logFC < 0)
   which.sig.up <- which(rank(diff$P.Value[which.up], 
@@ -752,11 +760,15 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
      ties.method = "random") <= as.numeric(top)/2)
 
   which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
- 
   rm(diff)
+
+  # normalize on all genes
+  dge <- DGEList(counts=df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),])
+  dge <- calcNormFactors(dge, refColumn = 1)
+
+  # subset to dmrs
   df <- df[which.sig,] 
   pctzero_top300 <- colMeans2(df==0)
-
 
   grp <- gsub("_.*", "", colnames(df))
   ids = colnames(df)
@@ -765,8 +777,6 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
   subtype <- ifelse(is.na(subtype), master$Status[x], subtype)
   batch <- as.character(master$Batch[x])
 
-  dge <- DGEList(counts=df)
-  dge <- calcNormFactors(dge, refColumn = 1)
   df <- sweep(df, MARGIN=2, 
     (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
 
@@ -799,7 +809,7 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
   pdf(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"), width = 4.5, height = 4.5)
    colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
    colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   shape <- c(20,17)[batch]
+   shape <- c(20,17)[as.numeric(batch)]
    scatterplot3d(tidydf[,1:3], pch = shape, 
      xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
      color=colors)
@@ -808,6 +818,7 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
    dev.off()
 
+  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
   p1 <- ggplot() +
     geom_point(data = tidydf, aes(x=pctzero_top300, y=PC1, colour = Type, shape=Batch), size = 2) +
     scale_color_manual(values = colors) + 
@@ -827,10 +838,31 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
   ggsave(file.path(savedir, "PCA_pctZero_plasma_top300.pdf"), width = 5, height = 5)
 
 
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, "PCA_pctZero_plasma_overall.pdf"), width = 5, height = 5)
+
+
   write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
       quote=FALSE, row.names=FALSE,
       file=file.path(savedir, paste0("PC_proportionVariation_plasma_top300.txt")), 
       sep = "\t")
+
+  savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 
 }
 
@@ -848,6 +880,9 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
 
   which.sig.down <- which(rank(diff$P.Value[which.down], 
      ties.method = "random") <= as.numeric(top)/2)
+  
+  message("WARNING; diff has ", ncol(diff), " columns. ",
+    "Expecting ", 3+2*(length(medip.urineR)+length(medip.urineC))+11, ".")
 
   which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
   rm(diff)
@@ -856,6 +891,10 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
     depths(medip.urineC, CS, "urineC"))
 
   pctzero_overall <- colMeans2(df==0)
+
+  # normalize on all genes
+  dge <- DGEList(counts=df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),])
+  dge <- calcNormFactors(dge, refColumn = 1)
 
   df <- df[which.sig,] 
   pctzero_top300 <- colMeans2(df==0)
@@ -867,8 +906,6 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   subtype <- ifelse(is.na(subtype), master$Status[x], subtype)
   batch <- as.character(master$Batch[x])
 
-  dge <- DGEList(counts=df)
-  dge <- calcNormFactors(dge, refColumn = 1)
   df <- sweep(df, MARGIN=2, 
     (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
  
@@ -930,6 +967,24 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
   ggsave(file.path(savedir, "PCA_pctZero_urine_top300.pdf"), width = 5, height = 5)
 
+
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, "PCA_pctZero_urine_overall.pdf"), width = 5, height = 5)
 
   write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
       quote=FALSE, row.names=FALSE,
