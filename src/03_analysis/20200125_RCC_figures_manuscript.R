@@ -190,6 +190,7 @@ ggsave(file.path(savedir_met, "volcano_plasma_plusmet.pdf"), width=5, height=4)
 
 ################# AUC summary 
 
+# RCCmet
 # file list
 itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
 savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
@@ -344,7 +345,77 @@ sample_probs %>%
 ggsave(file.path(savedir_met, "boxplot_risk_score_summary_100iter_splitControls.pdf"),
   width = 6, height = 3)
 
+########################################################################
+########################################################################
+########################################################################
+########################################################################
 
+# RCC all
+# file list
+itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
+
+files <- list.files(file.path(itdir), pattern = "sampleprob_table", 
+  recursive = TRUE, full.names = TRUE)
+files <- files[grepl("hold_m", files)]
+
+tmp <- files %>%
+  purrr::map(read_tsv)
+tmp <- lapply(seq_along(files), 
+  function(x) {
+    mutate(tmp[[x]], 
+      filename=files[x],
+      idx = stringr::str_locate(filename, true_label)[2])
+  }) 
+sample_probs <- tmp %>%
+  do.call("rbind", .) %>% 
+  select(-auc,-class_label) %>%
+  mutate(idx = substr(filename, idx+1, idx+3)) %>%
+  mutate(idx = as.numeric(gsub("([0-9]+).*$", "\\1", idx)))
+
+miss <- NULL
+idx <- tmp %>% filter(true_label ==  "rcc") %>% pull(idx)
+miss <- seq_along(medip.rcc)[-idx]
+
+idx <- tmp %>% filter(true_label ==  "control") %>% pull(idx)
+miss <- unique(miss, seq_along(medip.control)[-idx])
+
+idx <- tmp %>% filter(true_label ==  "urineR") %>% pull(idx)
+miss <- unique(miss, seq_along(medip.urineR)[-idx])
+
+idx <- tmp %>% filter(true_label ==  "urineC") %>% pull(idx)
+miss <- unique(miss, seq_along(medip.urineC)[-idx])
+
+paste0(miss, collapse=" ")
+
+sample_probs$sample_name <- as.factor(sample_probs$sample_name)
+sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name, sample_probs$class_prob)
+
+sample_probs <- mutate(sample_probs,
+  lab = ifelse(true_label %in% c("rcc", "urineR"), "RCC", "Control"))
+cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
+
+sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
+  ggplot(aes(x=sample_name, y=class_prob, color=lab)) +
+    geom_point() +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Estimated Probability RCC") +
+    xlab("Sample") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=11, height=5, 
+  file=file.path(savedir_met, "dotplot_leave1out_plasma.pdf"))
+
+sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
+  ggplot(aes(x=sample_name, y=class_prob, color=lab)) +
+    geom_point() +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Estimated Probability RCC") +
+    xlab("Sample") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=9, height=5, 
+  file=file.path(savedir_met, "dotplot_leave1out_urine.pdf"))
 
 
 ############ Supplementary
