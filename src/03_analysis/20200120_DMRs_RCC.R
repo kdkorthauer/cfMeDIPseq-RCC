@@ -1085,14 +1085,6 @@ m2 <- data.frame(ID=gsub(".sorted.bam", "",
   left_join(meta2, by = "ID")
 
 
-# remove three RCCMet samples since don't have histology
-metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
-x <- match( metids, master$"Sample number" )
-excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
-if(length(excl) > 0)
-  medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
-
-
 if (iter == 1){
 
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
@@ -1219,6 +1211,15 @@ if(iter <= 100){
     sep = "\t")
 
 }
+
+
+# remove three RCCMet samples since don't have histology
+metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
+x <- match( metids, master$"Sample number" )
+excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
+if(length(excl) > 0)
+  medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
+
 
 if(FALSE){
 # create pooled set
