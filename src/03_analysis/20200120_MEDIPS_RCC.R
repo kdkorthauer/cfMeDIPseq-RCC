@@ -69,6 +69,7 @@ excl <- rbind(c("R104_AN",  "<1M reads"),
     c("R24_LD021_L7", "extra lane"),  
     c("R42_LD013_L7", "extra lane"),   
     c("R2_CG", "extra coverage (per Sandor/Pier)"),
+    c("R2_CG", "extra coverage (per Jacob)"),
     c("R6_2366_L7", "extra lane"))
 colnames(excl) <- c("string", "reason")
 
