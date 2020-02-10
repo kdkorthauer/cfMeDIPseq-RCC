@@ -818,9 +818,10 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
 
   diff.file =file.path(savedir, "rcc.control.diff.rds")
   diff <- readRDS(file=diff.file)
-
-  message("WARNING; diff has ", ncol(diff), " columns. ",
-    "Expecting ", 3+2*(length(medip.rcc)+length(medip.control))+11, ".")
+  
+  if(ncol(diff) != 3+2*(length(medip.rcc)+length(medip.control))+11)
+   message("WARNING; diff has ", ncol(diff), " columns. ",
+     "Expecting ", 3+2*(length(medip.rcc)+length(medip.control))+11, ".")
 
   which.up <- which(diff$logFC > 0)
   which.down <- which(diff$logFC < 0)
