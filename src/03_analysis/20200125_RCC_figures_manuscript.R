@@ -374,29 +374,32 @@ sample_probs <- tmp %>%
   mutate(idx = as.numeric(gsub("([0-9]+).*$", "\\1", idx)))
 
 miss <- NULL
-idx <- tmp %>% filter(true_label ==  "rcc") %>% pull(idx)
+idx <- sample_probs %>% filter(true_label ==  "rcc") %>% pull(idx)
 miss <- seq_along(medip.rcc)[-idx]
 
-idx <- tmp %>% filter(true_label ==  "control") %>% pull(idx)
+idx <- sample_probs %>% filter(true_label ==  "control") %>% pull(idx)
 miss <- unique(miss, seq_along(medip.control)[-idx])
 
-idx <- tmp %>% filter(true_label ==  "urineR") %>% pull(idx)
+idx <- sample_probs %>% filter(true_label ==  "urineR") %>% pull(idx)
 miss <- unique(miss, seq_along(medip.urineR)[-idx])
 
-idx <- tmp %>% filter(true_label ==  "urineC") %>% pull(idx)
+idx <- sample_probs %>% filter(true_label ==  "urineC") %>% pull(idx)
 miss <- unique(miss, seq_along(medip.urineC)[-idx])
 
 paste0(miss, collapse=" ")
 
-sample_probs$sample_name <- as.factor(sample_probs$sample_name)
-sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name, sample_probs$class_prob)
 
 sample_probs <- mutate(sample_probs,
   lab = ifelse(true_label %in% c("rcc", "urineR"), "RCC", "Control"))
 cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
 
+sample_probs <- mutate(sample_probs, id=as.character(sample_name)) %>%
+  left_join(tidydf_plasma, by = "id") %>%
+  left_join(tidydf_urine, by = "id")
+
+
 sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab)) +
+  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
     geom_point() +
     scale_color_manual(values = cols) +
     labs(color="True label") +
@@ -407,7 +410,7 @@ ggsave(width=11, height=5,
   file=file.path(savedir_met, "dotplot_leave1out_plasma.pdf"))
 
 sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab)) +
+  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
     geom_point() +
     scale_color_manual(values = cols) +
     labs(color="True label") +
@@ -416,6 +419,35 @@ sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ggsave(width=9, height=5, 
   file=file.path(savedir_met, "dotplot_leave1out_urine.pdf"))
+
+
+sample_probs$sample_name <- as.factor(sample_probs$sample_name)
+sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name, sample_probs$class_prob)
+
+
+sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
+  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
+    geom_point() +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Estimated Probability RCC") +
+    xlab("Sample") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=11, height=5, 
+  file=file.path(savedir_met, "dotplot_leave1out_plasma_sorted.pdf"))
+
+sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
+  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
+    geom_point() +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Estimated Probability RCC") +
+    xlab("Sample") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=9, height=5, 
+  file=file.path(savedir_met, "dotplot_leave1out_urine_sorted.pdf"))
+
+
 
 
 ############ Supplementary
@@ -518,7 +550,9 @@ tab_all <- tab_all %>% unique() %>%
     "R11_2353_.*L7", # extra lane
     "R12_2350_.*L7", # extra lane   
     "R24_LD021_.*L7", # extra lane  
-    "R42_LD013_.*L7", # extra lane   
+    "R42_LD013_.*L7", # extra lane
+    "R3_CS", # duplicate sample   
+    "R2_CG", # extra coverage   
     "R6_2366_.*L7"), collapse="|"), # extra lane
     Sample))) 
 
@@ -617,6 +651,8 @@ tab <- read_tsv(file.path(thisdir, "multiqc_general_stats.txt")) %>%
     "R12_2350_L7", # extra lane   
     "R24_LD021_L7", # extra lane  
     "R42_LD013_L7", # extra lane   
+    "R3_CS", # duplicate sample
+    "R2_CG", # extra coverage      
     "R6_2366_L7"), collapse="|"), # extra lane
     Sample))) %>%
   mutate(group = ifelse(group == "RCC", "PLASMA_RCC", 
@@ -656,6 +692,8 @@ tab_jan2020 <- read_tsv(file.path(thisdir, "multiqc_general_stats.txt")) %>%
     "R11_2353_L7", # extra lane
     "R12_2350_L7", # extra lane   
     "R24_LD021_L7", # extra lane  
+    "R3_CS", # duplicate sample   
+    "R2_CG", # extra coverage   
     "R42_LD013_L7", # extra lane   
     "R6_2366_L7"), collapse="|"), # extra lane
     Sample))) %>%
@@ -733,7 +771,9 @@ for (g in seq_along(groups)){
     "R82_205", # missing histology
     "R11_2353_L7", # extra lane
     "R12_2350_L7", # extra lane   
-    "R24_LD021_L7", # extra lane  
+    "R24_LD021_L7", # extra lane 
+    "R3_CS", # duplicate sample    
+    "R2_CG", # extra coverage   
     "R42_LD013_L7", # extra lane   
     "R6_2366_L7"), collapse="|"), # extra lane
     bams)]
@@ -805,7 +845,6 @@ depths <- function(mdobjlist, CS, type){
 CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
 
 
-if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
   ### plasma
   df <- cbind(depths(medip.rcc, CS, "rcc"),
     depths(medip.control, CS, "ctrl"))
@@ -936,10 +975,11 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"))){
 
   savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 
-}
+  tidydf_plasma <- tidydf
 
 
-if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
+
+
   ### urine
 
   # include all sig rows
@@ -953,8 +993,9 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   which.sig.down <- which(rank(diff$P.Value[which.down], 
      ties.method = "random") <= as.numeric(top)/2)
   
-  message("WARNING; diff has ", ncol(diff), " columns. ",
-    "Expecting ", 3+2*(length(medip.urineR)+length(medip.urineC))+11, ".")
+  if (ncol(diff) != 3+2*(length(medip.urineR)+length(medip.urineC))+11)
+    message("WARNING; diff has ", ncol(diff), " columns. ",
+      "Expecting ", 3+2*(length(medip.urineR)+length(medip.urineC))+11, ".")
 
   which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
   rm(diff)
@@ -1011,7 +1052,7 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
   pdf(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"), width = 4.5, height = 4.5)
    colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
    colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   shape <- c(20,17)[batch]
+   shape <- c(20,17)[as.numeric(batch)]
    scatterplot3d(tidydf[,1:3], pch = shape, 
      xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
      color=colors)
@@ -1020,6 +1061,7 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
       inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
   dev.off()
 
+  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
 
   p1 <- ggplot() +
     geom_point(data = tidydf, aes(x=pctzero_top300, y=PC1, colour = Type, shape=Batch), size = 2) +
@@ -1063,7 +1105,8 @@ if (!file.exists(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"))){
       file=file.path(savedir, paste0("PC_proportionVariation_urine_top300.txt")), 
       sep = "\t")
 
-}
+  tidydf_urine <- tidydf
+
 
 
 
