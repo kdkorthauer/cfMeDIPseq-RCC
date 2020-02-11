@@ -188,6 +188,291 @@ volcano_met <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds")
 volcano_met
 ggsave(file.path(savedir_met, "volcano_plasma_plusmet.pdf"), width=5, height=4)
 
+
+
+### PCA plots - top300 - don't normalize on just 300 genes
+
+
+depths <- function(mdobjlist, CS, type){
+  depth <- data.frame(sapply(mdobjlist, function(x){
+      x@genome_count[CS@genome_CF >= 0]
+  }))
+  colnames(depth) <- sapply(mdobjlist, function(x){ 
+    gsub(".bam|.sorted.bam", "", x@sample_name)})
+  colnames(depth) <- paste0(type, "_", colnames(depth))
+  return(depth)
+}
+
+
+CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
+
+
+  ### plasma
+  df <- cbind(depths(medip.rcc, CS, "rcc"),
+    depths(medip.control, CS, "ctrl"))
+
+  pctzero_overall <- colMeans2(df==0)
+
+  # include all sig rows
+  savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
+
+
+  diff.file =file.path(savedir, "rcc.control.diff.rds")
+  diff <- readRDS(file=diff.file)
+  
+  if(ncol(diff) != 3+2*(length(medip.rcc)+length(medip.control))+11)
+   message("WARNING; diff has ", ncol(diff), " columns. ",
+     "Expecting ", 3+2*(length(medip.rcc)+length(medip.control))+11, ".")
+
+  which.up <- which(diff$logFC > 0)
+  which.down <- which(diff$logFC < 0)
+  which.sig.up <- which(rank(diff$P.Value[which.up], 
+     ties.method = "random") <= as.numeric(top)/2)
+
+  which.sig.down <- which(rank(diff$P.Value[which.down], 
+     ties.method = "random") <= as.numeric(top)/2)
+
+  which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
+  rm(diff)
+
+  # normalize on all genes
+  dge <- DGEList(counts=df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),])
+  dge <- calcNormFactors(dge, refColumn = 1)
+
+  # subset to dmrs
+  df <- df[which.sig,] 
+  pctzero_top300 <- colMeans2(df==0)
+
+  grp <- gsub("_.*", "", colnames(df))
+  ids = colnames(df)
+  x <- match(ids, paste0(ifelse(master$Status == "RCC", "rcc_", "ctrl_"), master$`Sample number`))
+  subtype <- as.character(master$Histology[x])
+  subtype <- ifelse(is.na(subtype), master$Status[x], subtype)
+  batch <- as.character(master$Batch[x])
+
+  df <- sweep(df, MARGIN=2, 
+    (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
+
+ 
+  pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
+  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
+    mutate(type = grp,
+           subtype = subtype,
+           id = ids,
+           Batch = as.factor(batch)) %>%
+    mutate(Type = ifelse(type == "rcc", "RCC", "Control"))%>%
+    mutate(pctZero_top300 = pctzero_top300,
+           pctZero_overall = pctzero_overall)
+    
+  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
+
+  ggplot() +
+    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type, shape = Batch), size = 2) +
+    scale_color_manual(values = colors) 
+  ggsave(file.path(savedir, "PCA_1_2_plasma_top300.pdf"), width = 4.5, height = 3.5)
+
+  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type, shape = Batch)) +
+    geom_point(size = 2)+
+    scale_color_manual(values = colors)
+  ggsave(file.path(savedir, "PCA_2_3_plasma_top300.pdf"), width = 4.5, height = 3.5)
+
+  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type, shape = Batch)) +
+    geom_point(size = 2)+
+    scale_color_manual(values = colors)
+  ggsave(file.path(savedir, "PCA_1_3_plasma_top300.pdf"), width = 4.5, height = 3.5)
+
+  pdf(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"), width = 4.5, height = 4.5)
+   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
+   colors <- colors[as.numeric(as.factor(tidydf$Type))]
+   shape <- c(20,17)[as.numeric(batch)]
+   scatterplot3d(tidydf[,1:3], pch = shape, 
+     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
+     color=colors)
+   legend(0,-5.3, legend = levels(as.factor(tidydf$Type)),
+      col =  c("#E69F00", "#56B4E9"), pch = c(20,17), 
+      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
+   dev.off()
+
+  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, "PCA_pctZero_plasma_top300.pdf"), width = 5, height = 5)
+
+
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, "PCA_pctZero_plasma_overall.pdf"), width = 5, height = 5)
+
+
+  write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
+      quote=FALSE, row.names=FALSE,
+      file=file.path(savedir, paste0("PC_proportionVariation_plasma_top300.txt")), 
+      sep = "\t")
+
+  savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
+
+  tidydf_plasma <- tidydf
+
+
+
+
+  ### urine
+
+  # include all sig rows
+  diff.file =file.path(savedir, "urineR.urineC.diff.rds")
+  diff <- readRDS(file=diff.file)
+  which.up <- which(diff$logFC > 0)
+  which.down <- which(diff$logFC < 0)
+  which.sig.up <- which(rank(diff$P.Value[which.up], 
+     ties.method = "random") <= as.numeric(top)/2)
+
+  which.sig.down <- which(rank(diff$P.Value[which.down], 
+     ties.method = "random") <= as.numeric(top)/2)
+  
+  if (ncol(diff) != 3+2*(length(medip.urineR)+length(medip.urineC))+11)
+    message("WARNING; diff has ", ncol(diff), " columns. ",
+      "Expecting ", 3+2*(length(medip.urineR)+length(medip.urineC))+11, ".")
+
+  which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
+  rm(diff)
+
+  df <- cbind(depths(medip.urineR, CS, "urineR"),
+    depths(medip.urineC, CS, "urineC"))
+
+  pctzero_overall <- colMeans2(df==0)
+
+  # normalize on all genes
+  dge <- DGEList(counts=df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),])
+  dge <- calcNormFactors(dge, refColumn = 1)
+
+  df <- df[which.sig,] 
+  pctzero_top300 <- colMeans2(df==0)
+
+  grp <- gsub("_.*", "", colnames(df))
+  ids = colnames(df)
+  x <- match(ids, paste0(ifelse(master$Status == "RCC", "urineR_", "urineC_"), master$`Sample number`))
+  subtype <- as.character(master$Histology[x])
+  subtype <- ifelse(is.na(subtype), master$Status[x], subtype)
+  batch <- as.character(master$Batch[x])
+
+  df <- sweep(df, MARGIN=2, 
+    (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
+ 
+  pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
+  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
+    mutate(type = grp,
+           subtype = subtype,
+           id = ids,
+           Batch = as.factor(batch)) %>%
+    mutate(Type = ifelse(type == "urineR", "RCC", "Control")) %>%
+    mutate(pctZero_top300 = pctzero_top300,
+           pctZero_overall = pctzero_overall)
+    
+  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
+
+  ggplot() +
+    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+  ggsave(file.path(savedir, "PCA_1_2_urine_top300.pdf"), width = 4.5, height = 3.5)
+
+  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type, shape=Batch)) +
+    geom_point(size = 2)+
+    scale_color_manual(values = colors)
+  ggsave(file.path(savedir, "PCA_2_3_urine_top300.pdf"), width = 4.5, height = 3.5)
+
+  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type, shape=Batch)) +
+    geom_point(size = 2)+
+    scale_color_manual(values = colors)
+  ggsave(file.path(savedir, "PCA_1_3_urine_top300.pdf"), width = 4.5, height = 3.5)
+
+  pdf(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"), width = 4.5, height = 4.5)
+   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
+   colors <- colors[as.numeric(as.factor(tidydf$Type))]
+   shape <- c(20,17)[as.numeric(batch)]
+   scatterplot3d(tidydf[,1:3], pch = shape, 
+     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
+     color=colors)
+   legend(0,-5.92, legend = levels(as.factor(tidydf$Type)),
+      col =  c("#E69F00", "#56B4E9"), pch = c(20,17), 
+      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
+  dev.off()
+
+  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
+
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, "PCA_pctZero_urine_top300.pdf"), width = 5, height = 5)
+
+
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, "PCA_pctZero_urine_overall.pdf"), width = 5, height = 5)
+
+  write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
+      quote=FALSE, row.names=FALSE,
+      file=file.path(savedir, paste0("PC_proportionVariation_urine_top300.txt")), 
+      sep = "\t")
+
+  tidydf_urine <- tidydf
+
+
+
 ################# AUC summary 
 
 # RCCmet
@@ -394,30 +679,43 @@ sample_probs <- mutate(sample_probs,
 cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
 
 sample_probs <- mutate(sample_probs, id=as.character(sample_name)) %>%
-  left_join(tidydf_plasma, by = "id") %>%
-  left_join(tidydf_urine, by = "id")
+  left_join(tidydf_plasma %>% mutate(id = gsub("ctrl", "control", id)), 
+    by = "id") %>%
+  left_join(tidydf_urine %>% mutate(id = gsub("ctrl", "control", id)), 
+    by = "id") %>%
+  mutate(PC1 = coalesce(PC1.x, PC1.y),
+    PC2 = coalesce(PC2.x, PC2.y),
+    PC3 = coalesce(PC3.x, PC3.y),
+    PC4 = coalesce(PC4.x, PC4.y),
+    type = coalesce(type.x, type.y),
+    subtype = coalesce(subtype.x, subtype.y),
+    Batch = coalesce(Batch.x, Batch.y),
+    pctZero_top300 = coalesce(pctZero_top300.x, pctZero_top300.y),
+    pctZero_overall = coalesce(pctZero_overall.x, pctZero_overall.y)) %>%
+  select(-which(grepl("\\.x", names(.)))) %>%
+  select(-which(grepl("\\.y", names(.))))
 
 
 sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
   ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
-    geom_point() +
+    geom_point(size=2) +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Estimated Probability RCC") +
+    xlab("Sample") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=16, height=5, 
+  file=file.path(savedir_met, "dotplot_leave1out_plasma.pdf"))
+
+sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
+  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
+    geom_point(size=2) +
     scale_color_manual(values = cols) +
     labs(color="True label") +
     ylab("Estimated Probability RCC") +
     xlab("Sample") + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ggsave(width=11, height=5, 
-  file=file.path(savedir_met, "dotplot_leave1out_plasma.pdf"))
-
-sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
-    geom_point() +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Estimated Probability RCC") +
-    xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=9, height=5, 
   file=file.path(savedir_met, "dotplot_leave1out_urine.pdf"))
 
 
@@ -427,24 +725,24 @@ sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name, sample_p
 
 sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
   ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
-    geom_point() +
+    geom_point(size=2) +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Estimated Probability RCC") +
+    xlab("Sample") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=16, height=5, 
+  file=file.path(savedir_met, "dotplot_leave1out_plasma_sorted.pdf"))
+
+sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
+  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
+    geom_point(size=2) +
     scale_color_manual(values = cols) +
     labs(color="True label") +
     ylab("Estimated Probability RCC") +
     xlab("Sample") + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ggsave(width=11, height=5, 
-  file=file.path(savedir_met, "dotplot_leave1out_plasma_sorted.pdf"))
-
-sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
-    geom_point() +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Estimated Probability RCC") +
-    xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=9, height=5, 
   file=file.path(savedir_met, "dotplot_leave1out_urine_sorted.pdf"))
 
 
@@ -825,290 +1123,6 @@ sf1 <- plot_grid(total + theme(legend.position = "none",
                  labels=c("A", "B", "C", "D"))
 plot_grid(sf1, leg, ncol=2, rel_widths = c(1,0.25))
 ggsave(file.path(savedir, "SupplementaryFigure1_JAN2020.pdf"), width=12, height=8)
-
-
-
-### PCA plots - top300 - don't normalize on just 300 genes
-
-
-depths <- function(mdobjlist, CS, type){
-  depth <- data.frame(sapply(mdobjlist, function(x){
-      x@genome_count[CS@genome_CF >= 0]
-  }))
-  colnames(depth) <- sapply(mdobjlist, function(x){ 
-    gsub(".bam|.sorted.bam", "", x@sample_name)})
-  colnames(depth) <- paste0(type, "_", colnames(depth))
-  return(depth)
-}
-
-
-CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
-
-
-  ### plasma
-  df <- cbind(depths(medip.rcc, CS, "rcc"),
-    depths(medip.control, CS, "ctrl"))
-
-  pctzero_overall <- colMeans2(df==0)
-
-  # include all sig rows
-  savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
-
-
-  diff.file =file.path(savedir, "rcc.control.diff.rds")
-  diff <- readRDS(file=diff.file)
-  
-  if(ncol(diff) != 3+2*(length(medip.rcc)+length(medip.control))+11)
-   message("WARNING; diff has ", ncol(diff), " columns. ",
-     "Expecting ", 3+2*(length(medip.rcc)+length(medip.control))+11, ".")
-
-  which.up <- which(diff$logFC > 0)
-  which.down <- which(diff$logFC < 0)
-  which.sig.up <- which(rank(diff$P.Value[which.up], 
-     ties.method = "random") <= as.numeric(top)/2)
-
-  which.sig.down <- which(rank(diff$P.Value[which.down], 
-     ties.method = "random") <= as.numeric(top)/2)
-
-  which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
-  rm(diff)
-
-  # normalize on all genes
-  dge <- DGEList(counts=df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),])
-  dge <- calcNormFactors(dge, refColumn = 1)
-
-  # subset to dmrs
-  df <- df[which.sig,] 
-  pctzero_top300 <- colMeans2(df==0)
-
-  grp <- gsub("_.*", "", colnames(df))
-  ids = colnames(df)
-  x <- match(ids, paste0(ifelse(master$Status == "RCC", "rcc_", "ctrl_"), master$`Sample number`))
-  subtype <- as.character(master$Histology[x])
-  subtype <- ifelse(is.na(subtype), master$Status[x], subtype)
-  batch <- as.character(master$Batch[x])
-
-  df <- sweep(df, MARGIN=2, 
-    (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
-
- 
-  pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           subtype = subtype,
-           id = ids,
-           Batch = as.factor(batch)) %>%
-    mutate(Type = ifelse(type == "rcc", "RCC", "Control"))
-    
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
-
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type, shape = Batch), size = 2) +
-    scale_color_manual(values = colors) 
-  ggsave(file.path(savedir, "PCA_1_2_plasma_top300.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type, shape = Batch)) +
-    geom_point(size = 2)+
-    scale_color_manual(values = colors)
-  ggsave(file.path(savedir, "PCA_2_3_plasma_top300.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type, shape = Batch)) +
-    geom_point(size = 2)+
-    scale_color_manual(values = colors)
-  ggsave(file.path(savedir, "PCA_1_3_plasma_top300.pdf"), width = 4.5, height = 3.5)
-
-  pdf(file.path(savedir, "PCA_1_2_3_plasma_top300.pdf"), width = 4.5, height = 4.5)
-   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
-   colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   shape <- c(20,17)[as.numeric(batch)]
-   scatterplot3d(tidydf[,1:3], pch = shape, 
-     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-     color=colors)
-   legend(0,-5.3, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = c(20,17), 
-      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
-   dev.off()
-
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
-  p1 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC1, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) + 
-    theme(legend.position="none")
-
-  p2 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC2, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors)  + 
-    theme(legend.position="none")
- 
-  p3 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC3, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) 
-
-  leg <- get_legend(p3)
-  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
-  ggsave(file.path(savedir, "PCA_pctZero_plasma_top300.pdf"), width = 5, height = 5)
-
-
-  p1 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) + 
-    theme(legend.position="none")
-
-  p2 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors)  + 
-    theme(legend.position="none")
- 
-  p3 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) 
-
-  leg <- get_legend(p3)
-  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
-  ggsave(file.path(savedir, "PCA_pctZero_plasma_overall.pdf"), width = 5, height = 5)
-
-
-  write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
-      quote=FALSE, row.names=FALSE,
-      file=file.path(savedir, paste0("PC_proportionVariation_plasma_top300.txt")), 
-      sep = "\t")
-
-  savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
-
-  tidydf_plasma <- tidydf
-
-
-
-
-  ### urine
-
-  # include all sig rows
-  diff.file =file.path(savedir, "urineR.urineC.diff.rds")
-  diff <- readRDS(file=diff.file)
-  which.up <- which(diff$logFC > 0)
-  which.down <- which(diff$logFC < 0)
-  which.sig.up <- which(rank(diff$P.Value[which.up], 
-     ties.method = "random") <= as.numeric(top)/2)
-
-  which.sig.down <- which(rank(diff$P.Value[which.down], 
-     ties.method = "random") <= as.numeric(top)/2)
-  
-  if (ncol(diff) != 3+2*(length(medip.urineR)+length(medip.urineC))+11)
-    message("WARNING; diff has ", ncol(diff), " columns. ",
-      "Expecting ", 3+2*(length(medip.urineR)+length(medip.urineC))+11, ".")
-
-  which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
-  rm(diff)
-
-  df <- cbind(depths(medip.urineR, CS, "urineR"),
-    depths(medip.urineC, CS, "urineC"))
-
-  pctzero_overall <- colMeans2(df==0)
-
-  # normalize on all genes
-  dge <- DGEList(counts=df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),])
-  dge <- calcNormFactors(dge, refColumn = 1)
-
-  df <- df[which.sig,] 
-  pctzero_top300 <- colMeans2(df==0)
-
-  grp <- gsub("_.*", "", colnames(df))
-  ids = colnames(df)
-  x <- match(ids, paste0(ifelse(master$Status == "RCC", "urineR_", "urineC_"), master$`Sample number`))
-  subtype <- as.character(master$Histology[x])
-  subtype <- ifelse(is.na(subtype), master$Status[x], subtype)
-  batch <- as.character(master$Batch[x])
-
-  df <- sweep(df, MARGIN=2, 
-    (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
- 
-  pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
-  tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
-    mutate(type = grp,
-           subtype = subtype,
-           id = ids,
-           Batch = as.factor(batch)) %>%
-    mutate(Type = ifelse(type == "urineR", "RCC", "Control")) %>%
-    mutate(pctZero_top300 = pctzero_top300,
-           pctZero_overall = pctzero_overall)
-    
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
-
-  ggplot() +
-    geom_point(data = tidydf, aes(x=PC1, y=PC2, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) 
-  ggsave(file.path(savedir, "PCA_1_2_urine_top300.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC2, y=PC3, colour = Type, shape=Batch)) +
-    geom_point(size = 2)+
-    scale_color_manual(values = colors)
-  ggsave(file.path(savedir, "PCA_2_3_urine_top300.pdf"), width = 4.5, height = 3.5)
-
-  tidydf %>%ggplot(aes(x=PC1, y=PC3, colour = Type, shape=Batch)) +
-    geom_point(size = 2)+
-    scale_color_manual(values = colors)
-  ggsave(file.path(savedir, "PCA_1_3_urine_top300.pdf"), width = 4.5, height = 3.5)
-
-  pdf(file.path(savedir, "PCA_1_2_3_urine_top300.pdf"), width = 4.5, height = 4.5)
-   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.5)
-   colors <- colors[as.numeric(as.factor(tidydf$Type))]
-   shape <- c(20,17)[as.numeric(batch)]
-   scatterplot3d(tidydf[,1:3], pch = shape, 
-     xlab="PC1", ylab="PC2", zlab="PC3", cex.symbols = 2,
-     color=colors)
-   legend(0,-5.92, legend = levels(as.factor(tidydf$Type)),
-      col =  c("#E69F00", "#56B4E9"), pch = c(20,17), 
-      inset = -0.25, xpd = TRUE, horiz = TRUE, bty="n")
-  dev.off()
-
-  colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
-
-  p1 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC1, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) + 
-    theme(legend.position="none")
-
-  p2 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC2, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors)  + 
-    theme(legend.position="none")
- 
-  p3 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_top300, y=PC3, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) 
-
-  leg <- get_legend(p3)
-  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
-  ggsave(file.path(savedir, "PCA_pctZero_urine_top300.pdf"), width = 5, height = 5)
-
-
-  p1 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) + 
-    theme(legend.position="none")
-
-  p2 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors)  + 
-    theme(legend.position="none")
- 
-  p3 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
-    scale_color_manual(values = colors) 
-
-  leg <- get_legend(p3)
-  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
-  ggsave(file.path(savedir, "PCA_pctZero_urine_overall.pdf"), width = 5, height = 5)
-
-  write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
-      quote=FALSE, row.names=FALSE,
-      file=file.path(savedir, paste0("PC_proportionVariation_urine_top300.txt")), 
-      sep = "\t")
-
-  tidydf_urine <- tidydf
-
-
-
 
 
 
