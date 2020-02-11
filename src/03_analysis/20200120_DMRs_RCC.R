@@ -101,7 +101,8 @@ bam.jan2020 <- bam.jan2020[!grepl(paste0(c("R104_AN", # <1M reads
     "R11_2353_L7", # extra lane
     "R12_2350_L7", # extra lane   
     "R24_LD021_L7", # extra lane  
-    "R42_LD013_L7", # extra lane   
+    "R42_LD013_L7", # extra lane
+    "R2_CG", # extra coverage   
     "R6_2366_L7"), collapse="|"), # extra lane
     bam.jan2020)]
 
@@ -1070,8 +1071,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   }
 }
 
-
+# Exclusion of samples included in RCCmet analysis above
 # remove three RCCMet samples since don't have histology
+# remove one duplicate control sample 
 metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
 x <- match( metids, master$"Sample number" )
 excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
