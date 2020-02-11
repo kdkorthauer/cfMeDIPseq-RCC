@@ -160,7 +160,7 @@ plotVolcano <- function(diff.file, sig=0.1){
       geom_vline(xintercept=0) +
       geom_text(data=annotations,aes(x=xpos,y=ypos,hjust=hjustvar,
         vjust=vjustvar,label=annotateText))+
-      geom_text(data=annotations,aes(x=2,y=-log10(sig),label="FDR<0.05"))
+      geom_text(data=annotations,aes(x=1.6,y=-log10(sig),label="FDR<0.05"))
 
   return(plt)
 }
@@ -695,7 +695,6 @@ sample_probs <- mutate(sample_probs, id=as.character(sample_name)) %>%
   select(-which(grepl("\\.x", names(.)))) %>%
   select(-which(grepl("\\.y", names(.))))
 
-
 sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
   ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
     geom_point(size=2) +
@@ -719,30 +718,45 @@ ggsave(width=11, height=5,
   file=file.path(savedir_met, "dotplot_leave1out_urine.pdf"))
 
 
-sample_probs$sample_name <- as.factor(sample_probs$sample_name)
-sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name, sample_probs$class_prob)
+sample_probs <- sample_probs %>%
+  mutate(sample_name = gsub("rcc_|control_|urineR_|urineC_", "", sample_name))
+plasma <- sample_probs %>% filter(true_label %in% c("rcc", "control"))
+urine <- sample_probs %>% filter(true_label %in% c("urineR", "urineC")) 
+
+plasma$name2 <- factor((1:nrow(plasma))[order(plasma$class_prob)], 
+  levels = (1:nrow(plasma))[order(plasma$class_prob)])
+urine$name2 <- factor((1:nrow(urine))[order(urine$class_prob)], 
+  levels = (1:nrow(urine))[order(urine$class_prob)])
+
+plasma <- arrange(plasma, class_prob)
+plasma$name2 <- factor((1:nrow(plasma))[order(plasma$class_prob)])
+urine <- arrange(urine, class_prob)
+urine$name2 <- factor((1:nrow(urine))[order(urine$class_prob)])
 
 
-sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
+plasma %>% 
+  ggplot(aes(x=name2, 
+    y=class_prob, color=lab, shape=Batch)) +
     geom_point(size=2) +
     scale_color_manual(values = cols) +
     labs(color="True label") +
     ylab("Estimated Probability RCC") +
     xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    scale_x_discrete(labels=plasma$sample_name)
 ggsave(width=16, height=5, 
   file=file.path(savedir_met, "dotplot_leave1out_plasma_sorted.pdf"))
 
-sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
+urine %>% 
+  ggplot(aes(x=name2, y=class_prob, color=lab, shape=Batch)) +
     geom_point(size=2) +
     scale_color_manual(values = cols) +
     labs(color="True label") +
     ylab("Estimated Probability RCC") +
     xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=11, height=5, 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_x_discrete(labels=urine$sample_name)
+ggsave(width=11, height=4, 
   file=file.path(savedir_met, "dotplot_leave1out_urine_sorted.pdf"))
 
 
