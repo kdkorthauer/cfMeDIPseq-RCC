@@ -413,8 +413,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     #  ties.method = "random") <= as.numeric(top))
 	}
 
-  message("qval threshold for top 300 is: ",
-    max(diff$limma.adj.p.value[which.up[which.sig.up]], na.rm=TRUE), " (up)",
+  message("qval threshold for top 300 is: \n",
+    max(diff$limma.adj.p.value[which.up[which.sig.up]], na.rm=TRUE), " (up)\n",
     max(diff$limma.adj.p.value[which.down[which.sig.down]], na.rm=TRUE), " (down)")
   print(which.sig)
 
@@ -673,7 +673,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
          NULL
        })
    })
-
+  
    message("evaluating test set")
    # best coefficient
    if (length(cvob1)>0){
@@ -1223,7 +1223,6 @@ medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"
 medip.control <- c(medip.control, medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
 medip.urineR <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"])
 medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"])
-
 
 if (iter == 99){
 
