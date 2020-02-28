@@ -21,7 +21,7 @@ library(BSgenome.Hsapiens.UCSC.hg19)
 library(scatterplot3d)
 library(MEDIPS)
 library(grDevices)
-library(Rtsne)
+
 
 theme_set(theme_bw())
 
@@ -74,7 +74,6 @@ meta <- rbind(data.frame("Sample number"=meta1$`Sample number`,
                    Histology=tolower(meta2$Histology),
                    Group = 2))
 
-
 # master metadata
 master <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20.01.31 - Final Sample List for NM Revisions.xlsx", 
   sheet = 3)
@@ -84,6 +83,8 @@ master <- master %>%
   mutate(`Sample number` = ifelse(Batch == "Met", tolower(ID), ID)) %>%
   mutate(Histology = ifelse(Histology %in% c("collecting duct", "chrcc", "xptranslocation"), 
     "other", Histology))
+
+table(master$Status, master$Institution, master$Source)
 
 # remove three RCCMet samples since don't have histology
 medip.rcc_M <- readRDS(file.path(outdir, "medip.rcc_M.rds")) # metastatic
@@ -97,6 +98,8 @@ if(length(excl) > 0)
 # joint medips objs
 
 medip.rcc_B1 <- medip.rcc
+medip.rcc_B2 <- medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"]
+medip.control_B2 <- medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"]
 medip.rcc_noM <-  c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
 medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], medip.rcc_M)
 medip.control <- c(medip.control, medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
@@ -220,6 +223,7 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
               depths(obj2, CS, l2))
 
   pctzero_overall <- colMeans2(df==0)
+  total_overall <- colSums2(as.matrix(df))
 
   diff <- readRDS(file=diff.file)
   
@@ -252,10 +256,12 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
   if (!is.null(ntop)){
     df <- df[which.sig,] 
     pctzero_top <- colMeans2(df==0)
+    total_top <- colSums2(as.matrix(df))
   }else{
-    # still need to remove those where all counts are zero
-    pctzero_top <- NA
+    # still need to remove those where most counts are zero
+    pctzero_top <- total_top <- NA
     df <- df[keep,] 
+    df <- df[which(rowSums(df,na.rm=TRUE)>=0.25*ncol(df)),]
   }
 
   grp <- gsub("_.*", "", colnames(df))
@@ -274,7 +280,6 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
   df <- sweep(df, MARGIN=2, 
     (dge$samples$norm.factors*dge$samples$lib.size)/1e6, `/`)
 
- 
   pcs <- Morpho::prcompfast(t(log(df+1)), center = TRUE, scale. = TRUE)
   tidydf <- select(data.frame(pcs$x), "PC1", "PC2", "PC3", "PC4") %>%
     mutate(type = grp,
@@ -283,7 +288,9 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
            Batch = as.factor(batch)) %>%
     mutate(Type = ifelse(type == "rcc" | type == "urineR", "RCC", "Control"))%>%
     mutate(pctZero_top = pctzero_top,
-           pctZero_overall = pctzero_overall)
+           pctZero_overall = pctzero_overall,
+           total_top = total_top,
+           total_overall = total_overall)
     
   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
 
@@ -322,42 +329,91 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
 
   if (!is.null(ntop)){
     p1 <- ggplot() +
-      geom_point(data = tidydf, aes(x=pctzero_top, y=PC1, colour = Type, shape=Batch), size = 2) +
+      geom_point(data = tidydf, aes(x=pctZero_top, y=PC1, colour = Type, shape=Batch), size = 2) +
       scale_color_manual(values = colors) + 
       theme(legend.position="none")
 
     p2 <- ggplot() +
-      geom_point(data = tidydf, aes(x=pctzero_top, y=PC2, colour = Type, shape=Batch), size = 2) +
+      geom_point(data = tidydf, aes(x=pctZero_top, y=PC2, colour = Type, shape=Batch), size = 2) +
       scale_color_manual(values = colors)  + 
       theme(legend.position="none")
  
     p3 <- ggplot() +
-      geom_point(data = tidydf, aes(x=pctzero_top, y=PC3, colour = Type, shape=Batch), size = 2) +
+      geom_point(data = tidydf, aes(x=pctZero_top, y=PC3, colour = Type, shape=Batch), size = 2) +
       scale_color_manual(values = colors) 
 
     leg <- get_legend(p3)
     plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
     ggsave(file.path(savedir, paste0("PCA_pctZeroTop", ntop, "_", label, ".pdf")), width = 5, height = 5)
+  
+
+     p1 <- ggplot() +
+      geom_point(data = tidydf, aes(x=total_top, y=PC1, colour = Type, shape=Batch), size = 2) +
+      scale_color_manual(values = colors) + 
+      theme(legend.position="none")
+
+    p2 <- ggplot() +
+      geom_point(data = tidydf, aes(x=total_top, y=PC2, colour = Type, shape=Batch), size = 2) +
+      scale_color_manual(values = colors)  + 
+      theme(legend.position="none")
+ 
+    p3 <- ggplot() +
+      geom_point(data = tidydf, aes(x=total_top, y=PC3, colour = Type, shape=Batch), size = 2) +
+      scale_color_manual(values = colors) 
+
+    leg <- get_legend(p3)
+    plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+    ggsave(file.path(savedir, paste0("PCA_totalTop", ntop, "_", label, ".pdf")), width = 5, height = 5)
+   
+    ggplot() +
+      geom_point(data = tidydf, aes(x=total_top, y=pctZero_top, colour = Type, shape=Batch), size = 2) +
+      scale_color_manual(values = colors) 
+    ggsave(file.path(savedir, paste0("PCA_totalTop", ntop, "_vs_pctZero", ntop, "_", label, ".pdf")), width = 5, height = 5)
+
   }
 
   p1 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
+    geom_point(data = tidydf, aes(x=pctZero_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
     scale_color_manual(values = colors) + 
     theme(legend.position="none")
 
   p2 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
+    geom_point(data = tidydf, aes(x=pctZero_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
     scale_color_manual(values = colors)  + 
     theme(legend.position="none")
  
   p3 <- ggplot() +
-    geom_point(data = tidydf, aes(x=pctzero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
+    geom_point(data = tidydf, aes(x=pctZero_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
     scale_color_manual(values = colors) 
 
   leg <- get_legend(p3)
   plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
   ggsave(file.path(savedir, paste0("PCA_pctZeroOverall_", label, ".pdf")), width = 5, height = 5)
 
+
+  p1 <- ggplot() +
+    geom_point(data = tidydf, aes(x=total_overall, y=PC1, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) + 
+    theme(legend.position="none")
+
+  p2 <- ggplot() +
+    geom_point(data = tidydf, aes(x=total_overall, y=PC2, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors)  + 
+    theme(legend.position="none")
+ 
+  p3 <- ggplot() +
+    geom_point(data = tidydf, aes(x=total_overall, y=PC3, colour = Type, shape=Batch), size = 2) +
+    scale_color_manual(values = colors) 
+
+  leg <- get_legend(p3)
+  plot_grid(p1,p2,p3 +  theme(legend.position="none"), leg, nrow=2)
+  ggsave(file.path(savedir, paste0("PCA_totalOverall_", label, ".pdf")), width = 5, height = 5)
+
+  ggplot() +
+      geom_point(data = tidydf, aes(x=total_overall, y=pctZero_overall, colour = Type, shape=Batch), 
+        size = 2) +
+      scale_color_manual(values = colors) 
+    ggsave(file.path(savedir, paste0("PCA_totalTop_vs_pctZero_", label, ".pdf")), width = 5, height = 5)
 
   write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
       quote=FALSE, row.names=FALSE,
@@ -378,6 +434,16 @@ tidydf_plasma <- makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds
 makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
   obj1=medip.rcc, obj2=medip.control, label="plasma", ntop=NULL)
 
+
+# plasma - NO METS
+savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
+# top 300 DMRs
+tidydf_plasma <- makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
+  obj1=medip.rcc_noM, obj2=medip.control, label="plasma", ntop=top)
+# all 
+makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
+  obj1=medip.rcc_noM, obj2=medip.control, label="plasma", ntop=NULL)
+
 # urine
 savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 # top 300 DMRs
@@ -392,6 +458,7 @@ makePCAplots(diff.file=file.path(savedir, "urineR.urineC.diff.rds"),
 # RCCmet
 # file list
 itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
+
 savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
 
 files <- list.files(file.path(itdir), pattern = "vRCCmet_top300.txt", recursive = TRUE, 
@@ -552,11 +619,21 @@ ggsave(file.path(savedir_met, "boxplot_risk_score_summary_100iter_splitControls.
 # RCC all
 # file list
 itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
+
+savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 
 files <- list.files(file.path(itdir), pattern = "sampleprob_table", 
   recursive = TRUE, full.names = TRUE)
-files <- files[grepl("hold_m", files)]
+files <- files[grepl("hold", files)]
+files <- files[!grepl("hold_m", files)]
+files <- files[!grepl("test", files)]
+
+#files2 <- list.files(file.path(itdir), pattern = "sampleprob_table", 
+  #recursive = TRUE, full.names = TRUE)
+#files2 <- files2[grepl("hold_m", files2)]
+#files2 <- files2[grepl("urine", files2)]
+#files2 <- files2[!grepl("test|adj", files2)]
+#files <- c(files, files2)
 
 tmp <- files %>%
   purrr::map(read_tsv)
@@ -574,7 +651,7 @@ sample_probs <- tmp %>%
 
 miss <- NULL
 idx <- sample_probs %>% filter(true_label ==  "rcc") %>% pull(idx)
-miss <- seq_along(medip.rcc)[-idx]
+miss <- seq_along(medip.rcc_noM)[-idx]
 
 idx <- sample_probs %>% filter(true_label ==  "control") %>% pull(idx)
 miss <- unique(miss, seq_along(medip.control)[-idx])
@@ -604,7 +681,7 @@ sample_probs <- mutate(sample_probs, id=as.character(sample_name)) %>%
     type = coalesce(type.x, type.y),
     subtype = coalesce(subtype.x, subtype.y),
     Batch = coalesce(Batch.x, Batch.y),
-    pctZero_top300 = coalesce(pctZero_top300.x, pctZero_top300.y),
+    pctZero_top = coalesce(pctZero_top.x, pctZero_top.y),
     pctZero_overall = coalesce(pctZero_overall.x, pctZero_overall.y)) %>%
   select(-which(grepl("\\.x", names(.)))) %>%
   select(-which(grepl("\\.y", names(.))))
@@ -631,6 +708,36 @@ sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
 ggsave(width=11, height=5, 
   file=file.path(savedir_met, "dotplot_leave1out_urine.pdf"))
 
+# compare risk scores relative to training set
+sample_probs %>% mutate(grp = ifelse(type %in% c("urineR", "urineC"), "urine", "plasma")) %>%
+  mutate(sens_copy = sens, spec_copy = spec,
+    sens = ifelse(lab == "Control", spec_copy, sens),
+    spec = ifelse(lab == "Control", sens_copy, spec)) %>%
+  ggplot(aes(x = lab, y=sens, fill=Batch)) +
+    geom_boxplot() +
+    facet_wrap(~grp) +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Training set sensitivty @ held out score threshold") +
+    xlab("Held out sample category") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=7, height=4, 
+   file=file.path(savedir_met, "boxplot_leave1out_training_sensitivity.pdf"))
+
+sample_probs %>% mutate(grp = ifelse(type %in% c("urineR", "urineC"), "urine", "plasma")) %>%
+  mutate(sens_copy = sens, spec_copy = spec,
+    sens = ifelse(lab == "Control", spec_copy, sens),
+    spec = ifelse(lab == "Control", sens_copy, spec)) %>%
+  ggplot(aes(x = lab, y=spec, fill=Batch)) +
+    geom_boxplot() +
+    facet_wrap(~grp) +
+    scale_color_manual(values = cols) +
+    labs(color="True label") +
+    ylab("Training set specificity @ held out score threshold") +
+    xlab("Held out sample category") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(width=7, height=4, 
+   file=file.path(savedir_met, "boxplot_leave1out_training_specificity.pdf"))
 
 sample_probs <- sample_probs %>%
   mutate(sample_name = gsub("rcc_|control_|urineR_|urineC_", "", sample_name))
@@ -677,6 +784,60 @@ ggsave(width=11, height=4,
 
 
 ############ Supplementary
+
+
+# compare overlap of dmr sets
+
+# file list
+itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
+
+files <- list.files(file.path(itdir), pattern = "urineR", 
+  recursive = TRUE, full.names = TRUE)
+files <- files[grepl(".rds", files)]
+files <- files[grepl("hold_m", files)]
+
+siglists <- vector("list", length(files))
+i <- 0
+
+for (diff.file in files){
+  i <- i+1 
+  diff <- readRDS(file=diff.file)
+  message("Fetching sig list for file ", i, ": ", nrow(diff))
+
+  which.up <- which(diff$logFC > 0)
+  which.down <- which(diff$logFC < 0)
+  which.sig.up <- which(rank(diff$P.Value[which.up], 
+      ties.method = "random") <= as.numeric(top)/2)
+
+  which.sig.down <- which(rank(diff$P.Value[which.down], 
+      ties.method = "random") <= as.numeric(top)/2)
+
+  which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
+
+  siglists[[i]] <- which.sig
+}
+
+siglists <- siglists[!sapply(siglists, is.null)]
+sig <- sapply(siglists, function(x) x)
+
+d <- matrix(nrow = ncol(sig), ncol=ncol(sig))
+diag(d) <- 1
+for (i in 1:nrow(d)){
+  for (j in 1:nrow(d)){
+    if (i<j){
+      d[i,j] <- sum(sig[,i] %in% sig[,j])/nrow(sig)
+    }
+  }
+}
+
+for (i in 1:nrow(d)){
+  for (j in 1:nrow(d)){
+    if (j<i){
+      d[i,j] <- d[j,i]
+    }
+  }
+}
+
 
 ## unique vs duplicate reads for plasma & urine
 

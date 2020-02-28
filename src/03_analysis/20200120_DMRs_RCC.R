@@ -28,6 +28,14 @@ ws <- as.numeric(Sys.getenv("WINDOWSIZE"))
 iter <- as.numeric(Sys.getenv("iter"))
 ntop <- as.numeric(Sys.getenv("ntop"))
 
+if (is.na(ws))
+  ws <- 300
+if (is.na(iter))
+  iter <- 1
+if (is.na(ntop))
+  ntop <- 300
+
+
 # dir where binned medips objects of all samples are saved
 medipdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
 dir.create(medipdir, showWarnings = FALSE)
@@ -38,6 +46,9 @@ dir.create(outdir, showWarnings = FALSE)
 
 outdir_m <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/hold_m_", str_pad(iter, 3, pad = "0"))
 dir.create(outdir_m, showWarnings = FALSE)
+
+outdir_adj <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/batch/hold_m_", str_pad(iter, 3, pad = "0"))
+dir.create(outdir_adj, showWarnings = FALSE)
 
 bamdir <- "/arc/project/st-kdkortha-1/cfMeDIPseq/out/sortedbam_dup"
 
@@ -118,7 +129,7 @@ set.seed(3874*as.numeric(iter))
 # canonical chrs
 # exclude X and Y chromosomes 
 chr.select <- paste0("chr", c(1:22))
-#chr.select <- "chr21"
+#
 
 # read in medip objects (created in 20190712_MEDIPS_RCC.R)
 medip.rcc <- readRDS(file.path(medipdir, "medip.rcc.rds"))
@@ -164,10 +175,6 @@ meta <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Keegan - RCC 
 meta2 <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20200108_Sample List.xlsx")
 CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.jan2020[[1]])
 
-m2 <- data.frame(ID=gsub(".sorted.bam", "", 
-  sapply(medip.jan2020, function(x) x@sample_name))) %>%
-  left_join(meta2, by = "ID")
-
 # master metadata
 master <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20.01.31 - Final Sample List for NM Revisions.xlsx", 
   sheet = 3)
@@ -178,12 +185,25 @@ master <- master %>%
   mutate(Histology = ifelse(Histology %in% c("collecting duct", "chrcc", "xptranslocation"), 
     "other", Histology))
 
+m2 <- data.frame(ID=gsub(".sorted.bam", "", 
+  sapply(medip.jan2020, function(x) x@sample_name))) %>%
+  left_join(meta2, by = "ID") %>%
+  left_join(master %>% select(ID, Institution) %>% dplyr::rename(Institution2=Institution), by = "ID")
+
+
+# check order
+n <- gsub(".sorted.bam", "", sapply(medip.jan2020, function(x) x@sample_name))
+x <- match(n, m2$ID)
+if(!identical(x, 1:nrow(m2)))
+  warning("Stop; m2 metadata table not properly sorted")
+
 # summary plots - make for all sets
 # for comparison 
 if (iter == 1){
 
 # how much coverage in windows with no CpGs?
 noCpGcov <- function(mdobjlist, CS, type){
+  sn <- sapply(mdobjlist, function(x) x@sample_name)
   pctNoCpG <- sapply(mdobjlist, function(x){
   	  sum(x@genome_count[CS@genome_CF == 0], na.rm=TRUE) / 
     sum(x@genome_count)
@@ -197,7 +217,8 @@ noCpGcov <- function(mdobjlist, CS, type){
   data.frame(pctNoCpG = pctNoCpG,
   	pctNonzeroCov = pctNonzeroCov,
   	type = type,
-    lab=lab)
+    lab=lab,
+    ID=sn)
 }
 
 df <- rbind(noCpGcov(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],
@@ -245,6 +266,8 @@ ggsave(file.path(outdir, "../PctBinswithNonzeroCov_jan2020.pdf"))
 # validate_lab = label for files saved in validation (heatmap, results table)
 # saveprobs = logical whether to save sample-level probabilities in a table
 # holdout = integer for which element (sample) to hold out; names() slot must contain either 'obj1' or 'obj2' designating which group the heldout sample is to be chosen.
+# overwrite = logical indicating whether to re-call DMRs (default FALSE; DMRs are loaded from file if it exists)
+# direction = character (either both, up or down) specifying which direction of change to use for DMRs. default is both (half up and half down)
 
 # differential coverage
 compute.diff <- function(obj1 = NULL, obj2 = NULL,
@@ -266,7 +289,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                        saveprobs=TRUE,
                        holdout=NULL,
                        batch =NULL,
-                       detRate= FALSE
+                       detRate= FALSE,
+                       overwrite=FALSE,
+                       direction="both"
                   ){
 
     set.seed(20190814/as.numeric(iter))
@@ -357,7 +382,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   if (merge & training < 1)
         heatmap.file.test <- gsub(".pdf", ".merge.pdf", heatmap.file.test)
 
-	if (!file.exists(diff.file)){
+	if (!file.exists(diff.file) | overwrite){
+    if (!is.null(batch))
+      batch <- batch[c(ix1, (max(ix1)+ix2))]
+
     diff = MEDIPS.meth(MSet1 = obj1[ix1], MSet2 = obj2[ix2],
 	          CSet = CS, diff.method = "limma", chr = chrs,
 		        p.adj = "BH", MeDIP = mdip.opt, minRowSum = 0.2*(n1+n2),
@@ -398,19 +426,39 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 		               abs(diff$logFC) > 2 &
 		               !is.na(diff$P.Value) )
 	}else{# top ntop - half up and half down
-    which.up <- which(diff$logFC > 0)
-    which.down <- which(diff$logFC < 0)
+    if (direction=="both"){
+      which.up <- which(diff$logFC > 0)
+      which.down <- which(diff$logFC < 0)
 
-		which.sig.up <- which(rank(diff$P.Value[which.up], 
-      ties.method = "random") <= as.numeric(top)/2)
+		  which.sig.up <- which(rank(diff$P.Value[which.up], 
+        ties.method = "random") <= as.numeric(top)/2)
 
-    which.sig.down <- which(rank(diff$P.Value[which.down], 
-      ties.method = "random") <= as.numeric(top)/2)
+      which.sig.down <- which(rank(diff$P.Value[which.down], 
+        ties.method = "random") <= as.numeric(top)/2)
 
-    which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
+      which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
+    }else if (direction=="up"){
+      which.up <- which(diff$logFC > 0)
+      which.sig.up <- which(rank(diff$P.Value[which.up], 
+        ties.method = "random") <= as.numeric(top))
+      which.sig <- which.up[which.sig.up]
 
-    #which.sig <- which(rank(diff$limma.adj.p.value, 
-    #  ties.method = "random") <= as.numeric(top))
+      which.down <- NA
+      which.sig.down <- NA
+
+    }else if (direction=="down"){
+      which.down <- which(diff$logFC < 0)
+      which.sig.down <- which(rank(diff$P.Value[which.down], 
+        ties.method = "random") <= as.numeric(top))
+      which.sig <- which.down[which.sig.down]
+
+      which.up <- NA
+      which.sig.up <- NA
+
+    }else{
+      stop("direction must be either both, up, or down")
+    }
+
 	}
 
   message("qval threshold for top 300 is: \n",
@@ -504,6 +552,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   which.norm <- which(rowSums(counts.train)>=0.25*ncol(counts.train))
   d_train <- DGEList(counts=counts.train)
   d_train <- calcNormFactors(d_train[which.norm,], refColumn = 1)
+
   dmrs <- sweep(dmrs, MARGIN=2, 
     (d_train$samples$norm.factors*d_train$samples$lib.size)/1e6, `/`)
 
@@ -517,6 +566,12 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   x <- match(colnames(dmrs),
          paste0(ifelse(master$Status == "RCC", paste0(lab1, "_"),  paste0(lab2, "_")), 
                     master$`Sample number`))
+
+  if (!grepl("rcc|control", paste0(lab1, lab2))){
+    x <- match(gsub(paste0(lab2, "_"), "", gsub(paste0(lab1, "_"), "", colnames(dmrs))),
+         master$`Sample number`)
+  }
+
   if (sum(is.na(x))>0)
     message("Warning: can't retrieve meta data for samples ", 
       gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs))[which(is.na(x))])
@@ -534,22 +589,29 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   names(inst_col) <- c("BWH", "Fresh", "DFCI", "MGH", "Sue")
   inst <- as.character(master$Institution[x])
 
+  probcol2 <- colorRamp2(c(1, 0), c("darkolivegreen", "white"), space="RGB")
+
+
   if (length(unique(st))>2){
       ha_column = HeatmapAnnotation(df = 
             data.frame(Type = ifelse(grepl(lab1, colnames(dmrs)), lab1, lab2), 
                        Subtype = st,
                        Batch = bt,
-                       Institution = inst),
+                       Institution = inst,
+                       PropZero = colMeans(dmrs==0)),
                        col = list(Type = type, 
                                   Subtype = subtype, 
                                   Batch = bt_col, 
-                                  Institution = inst_col))
+                                  Institution = inst_col,
+                                  PropZero = probcol2))
   }else{
       ha_column = HeatmapAnnotation(df = 
             data.frame(Type = ifelse(grepl(lab1, colnames(dmrs)), lab1, lab2),
                        Batch = bt,
-                       Institution = inst),
-                       col = list(Type = type, Batch = bt_col, Institution = inst_col))
+                       Institution = inst,
+                       PropZero = colMeans(dmrs==0)),
+                       col = list(Type = type, Batch = bt_col, 
+                        Institution = inst_col, PropZero = probcol2))
   }
 
 
@@ -562,10 +624,14 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                 ifelse(merge, " merged", "")))
 
   w = 8
+  if((n1+n2)>50) w = 10
   if((n1+n2)>75) w = 12
-	pdf(heatmap.file, width=w)
+	pdf(heatmap.file, width=w, height=8)
 	  draw(ht) 
   dev.off()
+
+  # extract row order of heatmap to use when plotting test set
+  ht_roworder <- row_order(ht)
 
   if(training < 1){
 
@@ -614,11 +680,18 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      counts.test <- cbind(m1,m2)
    }
    dmrs_new <- counts.test[which.sig,, drop=FALSE]
+   
+   print(quantile(colMeans(dmrs==0)))
+   print(quantile(colMeans(dmrs_new==0)))
 
    # NORMALIZE - use same reference sample for train and test
    d_all <- DGEList(counts=cbind(counts.train, counts.test))
    d_all <- calcNormFactors(d_all[which.norm,], refColumn = 1)
 
+   dmrs_old <- sweep(dmrs, MARGIN=2, 
+    (d_train$samples$norm.factors*d_train$samples$lib.size)/1e6, `*`)
+   dmrs <- sweep(dmrs_old, MARGIN=2,
+    (d_all$samples$norm.factors[(1:(n1+n2))]*d_all$samples$lib.size[(1:(n1+n2))])/1e6, `/`)
    dmrs_new <- sweep(dmrs_new, MARGIN=2, 
     (d_all$samples$norm.factors[-(1:(n1+n2))]*d_all$samples$lib.size[-(1:(n1+n2))])/1e6, `/`)
 
@@ -680,15 +753,21 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      new <- predict(cvob1, newx=t(log(dmrs_new+1)), type = "response", 
       s = "lambda.min")
 
+     # compare predicted risk scores to training set
+     old <- predict(cvob1, newx=t(log(dmrs+1)), type = "response", s = "lambda.min")
+
      if (ncol(dmrs_new)>1){
        library(ROCR)
        pred <- prediction(new, as.numeric(grepl(lab1, colnames(dmrs_new))))
        auc <- unlist(performance(pred,"auc")@y.values)
+       spec <- sens <- NA
      }else{
       pred <- auc <- NA
+      spec <- mean(as.numeric(old)[1:n1] > as.numeric(new))
+      sens <- mean(as.numeric(old)[(n1+1):(n1+n2)] < as.numeric(new))
      }
    }else{
-     auc <- NA
+     auc <- spec <- sens <- NA
      pred <- new <- rep(NA, ncol(dmrs_new))
    }
 
@@ -696,7 +775,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     true_label = ifelse(grepl(lab1, colnames(dmrs_new)), 
      lab1, lab2),
    class_prob = as.vector(new),
-   auc = auc)
+   auc = auc,
+   spec = spec,
+   sens = sens)
 
 
    # mean per group
@@ -720,8 +801,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    ecolors <- c("white",colorRampPalette( (brewer.pal(9, "Reds")) )(255)) # set colors
 
    type <- c("lightgrey", "black")
-   classcol <- c("white", "darkblue")
-   probcol <- colorRamp2(c(0, 1), c("darkblue", "white"))
+   classcol <- c("darkblue", "white")
+   probcol <- colorRamp2(c(1, 0), c("darkblue", "white"), space="RGB")
+   probcol2 <- colorRamp2(c(1, 0), c("darkolivegreen", "white"), space="RGB")
    names(type) <- c(lab1, lab2)
    names(classcol) <- c(lab1, lab2)
    ha_column = HeatmapAnnotation(df = data.frame(Type = ifelse(grepl(lab1, colnames(dmrs_new)), lab1, lab2), 
@@ -733,6 +815,13 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   x <- match(colnames(dmrs_new),
          paste0(ifelse(master$Status == "RCC", paste0(lab1, "_"),  paste0(lab2, "_")), 
                     master$`Sample number`))
+
+  if (!grepl("rcc|control", paste0(lab1, lab2))){
+    x <- match(gsub(paste0(lab2, "_"), "", gsub(paste0(lab1, "_"), "", colnames(dmrs_new))),
+         master$`Sample number`)
+  }
+
+
   if (sum(is.na(x))>0)
     message("Warning: can't retrieve meta data for samples ", 
       gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs_new))[which(is.na(x))])
@@ -757,22 +846,27 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                        Batch = bt,
                        Institution = inst,
                        Prob = ret_tab$class_prob,
-                       Class = ret_tab$class_label),
+                       Class = ret_tab$class_label,
+                       PropZero = colMeans(dmrs_new==0)),
                        col = list(Type = type, 
                                   Subtype = subtype, 
                                   Batch = bt_col, 
                                   Institution = inst_col,
                                   Prob = probcol,
-                                  Class = classcol))
+                                  Class = classcol,
+                                  PropZero = probcol2))
   }else{
       ha_column = HeatmapAnnotation(df = 
             data.frame(Type = ifelse(grepl(lab1, colnames(dmrs_new)), lab1, lab2),
                        Batch = bt,
                        Institution = inst,
                        Prob = ret_tab$class_prob,
-                       Class = ret_tab$class_label),
+                       Class = ret_tab$class_label,
+                       PropZero = colMeans(dmrs_new==0)),
                        col = list(Type = type, Batch = bt_col, 
-                        Institution = inst_col,Prob = probcol, Class = classcol))
+                        Institution = inst_col,Prob = probcol, 
+                        Class = classcol,
+                        PropZero = probcol2))
   }
 
    ht = Heatmap(log(dmrs_new+1), name = "log(CPM+1)", 
@@ -780,9 +874,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      show_row_names = FALSE, show_column_names = colnames,
      column_names_gp = gpar(fontsize = 8),
      column_title = paste0("Top ", top, 
-       ifelse(merge, " merged", "")))
+       ifelse(merge, " merged", "")),
+     row_order=ht_roworder)
 
-   pdf(heatmap.file.test, width = 8)
+   pdf(heatmap.file.test, width = 9, height=9)
    draw(ht)
    dev.off()
 
@@ -831,9 +926,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     ht = Heatmap(log(dmrs+1), name = "log(RPKM+1)", 
       top_annotation = ha_column, col = ecolors,
       show_row_names = FALSE, show_column_names = colnames,
-      column_names_gp = gpar(fontsize = 8))
+      column_names_gp = gpar(fontsize = 8),
+      row_order=ht_roworder)
 
-    pdf(heatmap.file.add, width = 8)
+    pdf(heatmap.file.add, width = 8, height=8)
     draw(ht)
     dev.off()
 
@@ -869,6 +965,11 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    d_all <- DGEList(counts=cbind(counts.train, m))
    d_all <- calcNormFactors(d_all[which.norm,], refColumn = 1)
 
+   dmrs_old <- sweep(dmrs, MARGIN=2, 
+    (d_train$samples$norm.factors*d_train$samples$lib.size)/1e6, `*`)
+   dmrs <- sweep(dmrs_old, MARGIN=2,
+    (d_all$samples$norm.factors[(1:(n1+n2))]*d_all$samples$lib.size[(1:(n1+n2))])/1e6, `/`)
+
    dmrs_new <- sweep(m[which.sig,], MARGIN=2, 
     (d_all$samples$norm.factors[-(1:(n1+n2))]*d_all$samples$lib.size[-(1:(n1+n2))])/1e6, `/`)
 
@@ -899,8 +1000,6 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 
    # binary classification
    # glmnet 
-
-
 
    library(glmnet)
    cvob1=cv.glmnet(x=t(log(dmrs+1)),
@@ -988,8 +1087,9 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
    ecolors <- c("white",colorRampPalette( (brewer.pal(9, "Reds")) )(255)) # set colors
 
    type <- c("lightgrey", "black")
-   classcol <- c("white", "darkblue")
-   probcol <- colorRamp2(c(0, 1), c("darkblue", "white"))
+   classcol <- c("darkblue", "white")
+   probcol <- colorRamp2(c(1, 0), c("darkblue", "white"), space="RGB")
+   probcol2 <- colorRamp2(c(1, 0), c("darkolivegreen", "white"), space="RGB")
    names(type) <- c(lab1, gsub("_partial", "",lab2))
    names(classcol) <- c(lab1, gsub("_partial", "",lab2))
 
@@ -997,6 +1097,13 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   x <- match(colnames(dmrs_new),
          paste0(ifelse(master$Status == "RCC", paste0(lab1, "_"),  paste0(lab2, "_")), 
                     master$`Sample number`))
+
+  if (!grepl("rcc|control", paste0(lab1, lab2))){
+    x <- match(gsub(paste0(lab2, "_"), "", gsub(paste0(lab1, "_"), "", colnames(dmrs_new))),
+         master$`Sample number`)
+  }
+
+
   if (sum(is.na(x))>0)
     message("Warning: can't retrieve meta data for samples ", 
       gsub(paste0(lab1, "_|", lab2, "_"), "", colnames(dmrs_new))[which(is.na(x))])
@@ -1027,22 +1134,27 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                        Batch = bt,
                        Institution = inst,
                        Prob = ret_tab$class_prob,
-                       Class = ret_tab$class_label),
+                       Class = ret_tab$class_label,
+                       PropZero = colMeans(dmrs_new==0)),
                        col = list(Type = type, 
                                   Subtype = subtype, 
                                   Batch = bt_col, 
                                   Institution = inst_col,
                                   Prob = probcol,
-                                  Class = classcol))
+                                  Class = classcol,
+                                  PropZero = probcol2))
   }else{
       ha_column = HeatmapAnnotation(df = 
             data.frame(Type = ifelse(grepl(lab1, colnames(dmrs_new)), lab1, lab2),
                        Batch = bt,
                        Institution = inst,
                        Prob = ret_tab$class_prob,
-                       Class = ret_tab$class_label),
+                       Class = ret_tab$class_label,
+                       PropZero = colMeans(dmrs_new==0)),
                        col = list(Type = type, Batch = bt_col, 
-                        Institution = inst_col,Prob = probcol, Class = classcol))
+                        Institution = inst_col,Prob = probcol, 
+                        Class = classcol,
+                        PropZero = probcol2))
   }
 
    ht = Heatmap(log(dmrs_new+1), name = "log(RPKM+1)", 
@@ -1050,9 +1162,10 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      show_row_names = FALSE, show_column_names = colnames,
      column_names_gp = gpar(fontsize = 8),
      column_title = paste0("Top ", top, 
-       ifelse(merge, " merged", "")))
+       ifelse(merge, " merged", "")),
+     row_order = ht_roworder)
 
-  pdf(heatmap.file.test, width = 8)
+  pdf(heatmap.file.test, width = 9, height=9)
    draw(ht)
   dev.off()
 
@@ -1071,16 +1184,19 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   }
 }
 
-# Exclusion of samples included in RCCmet analysis above
-# remove three RCCMet samples since don't have histology
-# remove one duplicate control sample 
-metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
-x <- match( metids, master$"Sample number" )
-excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
-if(length(excl) > 0)
-  medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
+sparsity <- function(mdobjlist, CS){
+  sn <- sapply(mdobjlist, function(x) x@sample_name)
+  pzero <- sapply(mdobjlist, function(x){
+      sum(x@genome_count == 0) / length(x@genome_count)
+  })
+  lab = gsub(".sorted.bam", "", 
+  sapply(mdobjlist, function(x) x@sample_name))
 
+  data.frame(pzero = pzero,
+    lab=lab)
+}
 
+if(FALSE){
 if (iter == 1){
 
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
@@ -1100,7 +1216,6 @@ if (iter == 1){
            obj2 = medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"],
            lab1 = "urineR_New", lab2 = "urineC_New",
            out.dir = file.path(outdir, ".."), top = ntop)
-
 
   ## train on orig, predict on new
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
@@ -1207,6 +1322,98 @@ if(iter <= 100){
     sep = "\t")
 
 }
+}
+
+  # sanity check - training/test within batch alone
+if(iter <= 25){
+   outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
+    ws, "/batch/iter_batch2", 
+    str_pad(iter, 3, pad = "0"))
+  dir.create(outdir_iterm, showWarnings = FALSE)
+
+if(FALSE){
+  compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],
+           obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"],
+           lab1 = "rcc", lab2 = "control",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+  compute.diff(obj1 = medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"], 
+           obj2 = medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"],
+           lab1 = "urineR", lab2 = "urineC",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+
+## batch2 plasma: DFCI vs MGH
+  compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 == "DFCI"],
+           obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 == "MGH"],
+           lab1 = "dfci", lab2 = "mgh",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+
+## batch2 controls: BWH vs nonBWH
+  compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control" & m2$Institution2 == "BWH"],
+           obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control" & m2$Institution2 != "BWH"],
+           lab1 = "bwh", lab2 = "non",
+           training = 0.75,
+           out.dir = outdir_iterm, top = ntop)
+
+
+  outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
+    ws, "/test/iter_batch1", 
+    str_pad(iter, 3, pad = "0"))
+  dir.create(outdir_iterm, showWarnings = FALSE)
+  compute.diff(obj1 = medip.rcc,
+           obj2 = medip.control,
+           lab1 = "rcc", lab2 = "control",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+  compute.diff(obj1 = medip.urineR, 
+           obj2 = medip.urineC,
+           lab1 = "urineR", lab2 = "urineC",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+}
+
+   outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
+    ws, "/batch/iter_batch2", 
+    str_pad(iter, 3, pad = "0"))
+  dir.create(outdir_iterm, showWarnings = FALSE)
+    # obtain sparsity of batch2 RCC_nomet and batch2 control
+  # to use for filtering 
+  pz1 <- sparsity(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
+  pz2 <- sparsity(medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
+  pz <- rbind(pz1 %>% mutate(type="RCC"),
+            pz2 %>% mutate(type="Control")) %>%
+      mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
+      mutate(sparse=ifelse(pzero>0.9, TRUE, FALSE))
+
+if(FALSE){
+  # try removing samples with elevated sparsity compared to rest
+  compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"][pz1$pzero < 0.9], 
+           obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"][pz2$pzero < 0.9],
+           lab1 = "rccFilt", lab2 = "controlFilt",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop)
+}
+  compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"][pz1$pzero < 0.9], 
+           obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"][pz2$pzero < 0.9],
+           lab1 = "rccFiltAdj", lab2 = "controlFiltAdj",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE)
+}
+
+
+
+
+# Exclusion of samples included in RCCmet analysis above
+# remove three RCCMet samples since don't have histology
+# remove one duplicate control sample 
+metids <- gsub(".sorted.bam", "", sapply(medip.rcc_M, function(x) x@sample_name))
+x <- match( metids, master$"Sample number" )
+excl <- master$"Sample number"[x][grepl("Exclude", master$Inclusion[x])]
+if(length(excl) > 0)
+  medip.rcc_M <- medip.rcc_M[-which(metids %in% excl)]
 
 # create pooled set
 
@@ -1218,38 +1425,132 @@ meta <- rbind(data.frame(`Sample number`=meta$`Sample number`,
 colnames(meta)[1] <- "Sample number"
 
 # joint medips objs
+batch_plasma <- c(rep(1, length(medip.rcc)), rep(2, sum(m2$Source=="Plasma" & m2$Status == "RCC")),
+  rep(1, length(medip.control)), rep(2, sum(m2$Source=="Plasma" & m2$Status == "Control")))
 
+batch_urine <- c(rep(1, length(medip.urineR)), rep(2, sum(m2$Source=="Urine" & m2$Status == "RCC")),
+  rep(1, length(medip.urineC)), rep(2, sum(m2$Source=="Urine" & m2$Status == "Control")))
+
+# batch2: remove MGH rcc samples 
+medip.rcc_noMet_noMGH <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 != "MGH"])
+
+medip.rcc_noMet <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
 medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], medip.rcc_M)
 medip.control <- c(medip.control, medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
 medip.urineR <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"])
 medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"])
 
-if (iter == 99){
+# obtain sparsity of pooled RCC_nomet and pooled control
+# to use for filtering 
+pz1 <- sparsity(medip.rcc_noMet)
+pz2 <- sparsity(medip.control)
+pz <- rbind(pz1 %>% mutate(type="RCC"),
+            pz2 %>% mutate(type="Control")) %>%
+      mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
+      mutate(sparse=ifelse(pzero>0.9, TRUE, FALSE))
+
+if (iter == 1){
+
+pz %>%
+ ggplot(aes(x=type, y=pzero, colour=Batch))+ 
+ geom_boxplot() + 
+ geom_jitter(position = position_jitterdodge(jitter.width=0.1))
+#ggsave(file.path(outdir, "..", "boxplot_sparsity_batch.pdf"),
+#  width=5, height=5)
 
 dir.create(file.path(outdir, "../pooled_m"))
 dir.create(file.path(outdir, "../pooled"))
 
+if (FALSE){
 compute.diff(obj1 = medip.rcc, obj2 = medip.control,
            lab1 = "rcc", lab2 = "control",
            out.dir = file.path(outdir, "../pooled_m"), top = ntop)
+
+compute.diff(obj1 = medip.rcc_noMet, obj2 = medip.control,
+           lab1 = "rcc", lab2 = "control",
+           out.dir = file.path(outdir, "../pooled"), top = ntop)
 
 compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
            lab1 = "urineR", lab2 = "urineC",
            out.dir = file.path(outdir, "../pooled"), top = ntop)
 
-}
 
+
+compute.diff(obj1 = medip.rcc_noMet, obj2 = medip.control,
+           lab1 = "rcc", lab2 = "control",
+           out.dir = file.path(outdir, "../pooled"), top = ntop)
+
+
+# try removing samples with elevated sparsity compared to rest
+compute.diff(obj1 = medip.rcc_noMet[pz1$pzero < 0.9], 
+           obj2 = medip.control[pz2$pzero < 0.9],
+           lab1 = "rccFilt", lab2 = "controlFilt",
+           out.dir = file.path(outdir, "../pooled"), top = ntop)
+
+}}
+
+
+
+# sanity check - training/test across both batches
+if(iter <= 25){
+   outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
+    ws, "/batch/iter_Combined", 
+    str_pad(iter, 3, pad = "0"))
+  dir.create(outdir_iterm, showWarnings = FALSE)
+
+
+if (FALSE){
+  compute.diff(obj1 = medip.urineR, 
+           obj2 = medip.urineC,
+           lab1 = "urineR", lab2 = "urineC",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+
+  compute.diff(obj1 = medip.rcc_noMet, 
+           obj2 = medip.control,
+           lab1 = "rcc", lab2 = "control",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+
+  compute.diff(obj1 = medip.rcc_noMet_noMGH, 
+           obj2 = medip.control,
+           lab1 = "rcc_noMGH", lab2 = "control",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+  
+
+  # try removing samples with elevated sparsity compared to rest
+  compute.diff(obj1 = medip.rcc_noMet[pz1$pzero < 0.9], 
+           obj2 = medip.control[pz2$pzero < 0.9],
+           lab1 = "rccFilt", lab2 = "controlFilt",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop)
+  
+  # try using only sites with increased meth in RCC
+  compute.diff(obj1 = medip.urineR, 
+           obj2 = medip.urineC,
+           lab1 = "urineR_down", lab2 = "urineC_down",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop,
+           direction = "down")
+
+}}
+
+
+if(FALSE){
 # leave-one-out
 
 # rcc plasma
 iter
-length(medip.rcc)
-if(as.numeric(iter) <= length(medip.rcc)){
+length(medip.rcc_noMet)
+if(as.numeric(iter) <= length(medip.rcc_noMet)){
   names(iter) <- "obj1"
-  compute.diff(obj1 = medip.rcc, obj2 = medip.control,
+  compute.diff(obj1 = medip.rcc_noMet_noMGH, obj2 = medip.control,
              holdout = iter,
              lab1 = paste0("rcc",iter), lab2 = "control",
-             out.dir = file.path(outdir_m), top = ntop)
+             out.dir = file.path(outdir_adj), top = ntop,
+             batch=batch_plasma, detRate=TRUE,
+             overwrite = TRUE)
 }
 
 # control plasma
@@ -1257,10 +1558,12 @@ iter
 length(medip.control)
 if(as.numeric(iter) <= length(medip.control)){
   names(iter) <- "obj2"
-  compute.diff(obj1 = medip.rcc, obj2 = medip.control,
+  compute.diff(obj1 = medip.rcc_noMet_noMGH, obj2 = medip.control,
              holdout = iter,
              lab1 = "rcc", lab2 = paste0("control",iter),
-             out.dir = file.path(outdir_m), top = ntop)
+             out.dir = file.path(outdir_adj), top = ntop,
+             batch=batch_plasma, detRate=TRUE,
+             overwrite = TRUE)
 }
 
 
@@ -1272,7 +1575,8 @@ if(as.numeric(iter) <= length(medip.urineR)){
   compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
              holdout = iter,
              lab1 = paste0("urineR",iter), lab2 = "urineC",
-             out.dir = file.path(outdir_m), top = ntop)
+             out.dir = file.path(outdir_adj), top = ntop,
+             batch=batch_urine, detRate=TRUE)
 }
 
 # control urine
@@ -1283,5 +1587,7 @@ if(as.numeric(iter) <= length(medip.urineC)){
   compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
              holdout = iter,
              lab1 = "urineR", lab2 = paste0("urineC",iter),
-             out.dir = file.path(outdir_m), top = ntop)
+             out.dir = file.path(outdir_adj), top = ntop,
+             batch=batch_urine, detRate=TRUE)
+}
 }

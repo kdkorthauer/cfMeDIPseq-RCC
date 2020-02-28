@@ -16,11 +16,15 @@ iter=0
 export iter
 qsub pbs_one_iteration.sh
 
-for iter in {1..105}; do
+for iter in {1..73}; do
+for iter in {1..55}; do
+
+for iter in {2..25}; do
   export iter
   qsub pbs_one_iteration.sh
   sleep 0.5
 done
+
 
 # summarize and make figures
 summary=1
