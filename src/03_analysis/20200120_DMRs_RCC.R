@@ -1196,7 +1196,8 @@ sparsity <- function(mdobjlist, CS){
     lab=lab)
 }
 
-if(FALSE){
+if (FALSE){
+
 if (iter == 1){
 
   compute.diff(obj1 = medip.rcc, obj2 = medip.control,
@@ -1357,22 +1358,34 @@ if(FALSE){
            training = 0.75,
            out.dir = outdir_iterm, top = ntop)
 
+}
+
+  pz1 <- sparsity(medip.rcc)
+  pz2 <- sparsity(medip.control)
+  pz <- rbind(pz1 %>% mutate(type="RCC"),
+            pz2 %>% mutate(type="Control")) %>%
+      mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
+      mutate(sparse=ifelse(pzero>0.9, TRUE, FALSE)) 
+
+  message("filtering ", sum(pz1$pzero > 0.90), " sparse samples from plasma batch 1 rcc")
+  message("filtering ", sum(pz2$pzero > 0.90), " sparse samples from plasma batch 1 control")
 
   outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
     ws, "/test/iter_batch1", 
     str_pad(iter, 3, pad = "0"))
   dir.create(outdir_iterm, showWarnings = FALSE)
-  compute.diff(obj1 = medip.rcc,
-           obj2 = medip.control,
-           lab1 = "rcc", lab2 = "control",
+  compute.diff(obj1 = medip.rcc[pz1$pzero < 0.9],
+           obj2 = medip.control[pz2$pzero < 0.9],
+           lab1 = "rccFilt", lab2 = "controlFilt",
            training = 0.8,
            out.dir = outdir_iterm, top = ntop)
+
+if(FALSE){
   compute.diff(obj1 = medip.urineR, 
            obj2 = medip.urineC,
            lab1 = "urineR", lab2 = "urineC",
            training = 0.8,
            out.dir = outdir_iterm, top = ntop)
-}
 
    outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
     ws, "/batch/iter_batch2", 
@@ -1387,14 +1400,13 @@ if(FALSE){
       mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
       mutate(sparse=ifelse(pzero>0.9, TRUE, FALSE))
 
-if(FALSE){
   # try removing samples with elevated sparsity compared to rest
   compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"][pz1$pzero < 0.9], 
            obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"][pz2$pzero < 0.9],
            lab1 = "rccFilt", lab2 = "controlFilt",
            training=0.8,
            out.dir = outdir_iterm, top = ntop)
-}
+
   compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"][pz1$pzero < 0.9], 
            obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"][pz2$pzero < 0.9],
            lab1 = "rccFiltAdj", lab2 = "controlFiltAdj",
@@ -1402,7 +1414,7 @@ if(FALSE){
            out.dir = outdir_iterm, top = ntop,
            detRate=TRUE)
 }
-
+}
 
 
 
@@ -1433,6 +1445,7 @@ batch_urine <- c(rep(1, length(medip.urineR)), rep(2, sum(m2$Source=="Urine" & m
 
 # batch2: remove MGH rcc samples 
 medip.rcc_noMet_noMGH <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 != "MGH"])
+medip.rcc_noMet_noDFCI <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 != "DFCI"])
 
 medip.rcc_noMet <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
 medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], medip.rcc_M)
@@ -1534,7 +1547,22 @@ if (FALSE){
            out.dir = outdir_iterm, top = ntop,
            direction = "down")
 
-}}
+}
+  compute.diff(obj1 = medip.urineR, 
+           obj2 = medip.urineC,
+           lab1 = "urineR_downAdj", lab2 = "urineC_downAdj",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop,
+           direction = "down",
+           detRate=TRUE)
+
+  compute.diff(obj1 = medip.rcc_noMet_noDFCI, 
+           obj2 = medip.control,
+           lab1 = "rcc_noDFCI", lab2 = "control",
+           training = 0.8,
+           out.dir = outdir_iterm, top = ntop)
+
+}
 
 
 if(FALSE){
