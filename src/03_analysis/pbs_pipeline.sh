@@ -16,10 +16,7 @@ iter=0
 export iter
 qsub pbs_one_iteration.sh
 
-for iter in {1..73}; do
-for iter in {1..55}; do
-
-for iter in {1..25}; do
+for iter in {1..100}; do
   export iter
   qsub pbs_one_iteration.sh
   sleep 0.5
