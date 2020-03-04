@@ -139,6 +139,7 @@ medip.urineC <- readRDS(file.path(medipdir, "medip.urineC.rds"))
 medip.jan2020 <- readRDS(file.path(medipdir, "medip.jan2020.rds")) # already filtered
 medip.rcc_M <- readRDS(file.path(medipdir, "medip.rcc_M.rds")) # metastatic
 
+
 # remove control plasma samples with failed qc (S040) 
 medip.control <- medip.control[!sapply(medip.control, function(x) x@sample_name) %in% c("S040.sorted.bam")]
 bam.control <- bam.control[!grepl("S040.sorted.bam", bam.control)]
@@ -245,6 +246,25 @@ ggsave(file.path(outdir, "../PctBinswithNonzeroCov_jan2020.pdf"))
 }
 
 
+sparsity <- function(mdobjlist, CS){
+  sn <- sapply(mdobjlist, function(x) x@sample_name)
+  pzero <- sapply(mdobjlist, function(x){
+      sum(x@genome_count == 0) / length(x@genome_count)
+  })
+  pctNoCpG <- sapply(mdobjlist, function(x){
+      sum(x@genome_count[CS@genome_CF == 0]) / 
+      sum(x@genome_count)
+  })
+  lab = gsub(".sorted.bam", "", 
+  sapply(mdobjlist, function(x) x@sample_name))
+
+  data.frame(pzero = pzero,
+    nocpg = pctNoCpG,
+    lab=lab)
+}
+
+
+
 # obj1 = first medip object
 # obj2 = second medip object
 # lab1 = label of first medip obj
@@ -291,7 +311,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                        batch =NULL,
                        detRate= FALSE,
                        overwrite=FALSE,
-                       direction="both"
+                       direction="both",
+                       minCpG=0
                   ){
 
     set.seed(20190814/as.numeric(iter))
@@ -389,7 +410,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     diff = MEDIPS.meth(MSet1 = obj1[ix1], MSet2 = obj2[ix2],
 	          CSet = CS, diff.method = "limma", chr = chrs,
 		        p.adj = "BH", MeDIP = mdip.opt, minRowSum = 0.2*(n1+n2),
-            detRate=detRate, batch=batch)
+            detRate=detRate, batch=batch, minCpG=minCpG)
 	  saveRDS(diff, file = diff.file)
 	}else{
 	  diff <- readRDS(file=diff.file)
@@ -1184,18 +1205,6 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
   }
 }
 
-sparsity <- function(mdobjlist, CS){
-  sn <- sapply(mdobjlist, function(x) x@sample_name)
-  pzero <- sapply(mdobjlist, function(x){
-      sum(x@genome_count == 0) / length(x@genome_count)
-  })
-  lab = gsub(".sorted.bam", "", 
-  sapply(mdobjlist, function(x) x@sample_name))
-
-  data.frame(pzero = pzero,
-    lab=lab)
-}
-
 if (FALSE){
 
 if (iter == 1){
@@ -1333,9 +1342,10 @@ if(iter <= 25){
   dir.create(outdir_iterm, showWarnings = FALSE)
 
 if(FALSE){
+  
   compute.diff(obj1 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"],
            obj2 = medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"],
-           lab1 = "rcc", lab2 = "control",
+           lab1 = "rccReg", lab2 = "controlReg",
            training = 0.8,
            out.dir = outdir_iterm, top = ntop)
   compute.diff(obj1 = medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"], 
@@ -1358,10 +1368,9 @@ if(FALSE){
            training = 0.75,
            out.dir = outdir_iterm, top = ntop)
 
-}
 
-  pz1 <- sparsity(medip.rcc)
-  pz2 <- sparsity(medip.control)
+  pz1 <- sparsity(medip.rcc, CS)
+  pz2 <- sparsity(medip.control, CS)
   pz <- rbind(pz1 %>% mutate(type="RCC"),
             pz2 %>% mutate(type="Control")) %>%
       mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
@@ -1371,16 +1380,16 @@ if(FALSE){
   message("filtering ", sum(pz2$pzero > 0.90), " sparse samples from plasma batch 1 control")
 
   outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
-    ws, "/test/iter_batch1", 
+    ws, "/batch/iter_batch1", 
     str_pad(iter, 3, pad = "0"))
   dir.create(outdir_iterm, showWarnings = FALSE)
   compute.diff(obj1 = medip.rcc[pz1$pzero < 0.9],
            obj2 = medip.control[pz2$pzero < 0.9],
-           lab1 = "rccFilt", lab2 = "controlFilt",
+           lab1 = "rccFiltAdj", lab2 = "controlFiltAdj",
            training = 0.8,
-           out.dir = outdir_iterm, top = ntop)
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE)
 
-if(FALSE){
   compute.diff(obj1 = medip.urineR, 
            obj2 = medip.urineC,
            lab1 = "urineR", lab2 = "urineC",
@@ -1393,8 +1402,8 @@ if(FALSE){
   dir.create(outdir_iterm, showWarnings = FALSE)
     # obtain sparsity of batch2 RCC_nomet and batch2 control
   # to use for filtering 
-  pz1 <- sparsity(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
-  pz2 <- sparsity(medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
+  pz1 <- sparsity(medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], CS)
+  pz2 <- sparsity(medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"], CS)
   pz <- rbind(pz1 %>% mutate(type="RCC"),
             pz2 %>% mutate(type="Control")) %>%
       mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
@@ -1446,6 +1455,10 @@ batch_urine <- c(rep(1, length(medip.urineR)), rep(2, sum(m2$Source=="Urine" & m
 # batch2: remove MGH rcc samples 
 medip.rcc_noMet_noMGH <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 != "MGH"])
 medip.rcc_noMet_noDFCI <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC" & m2$Institution2 != "DFCI"])
+medip.urineR_noMGH <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC" & m2$Institution2 != "MGH"])
+
+medip.control_B1 <- medip.control
+medip.rcc_B1 <- medip.rcc
 
 medip.rcc_noMet <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
 medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], medip.rcc_M)
@@ -1453,23 +1466,41 @@ medip.control <- c(medip.control, medip.jan2020[m2$Source=="Plasma" & m2$Status 
 medip.urineR <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"])
 medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"])
 
+
+
 # obtain sparsity of pooled RCC_nomet and pooled control
 # to use for filtering 
-pz1 <- sparsity(medip.rcc_noMet)
-pz2 <- sparsity(medip.control)
-pz <- rbind(pz1 %>% mutate(type="RCC"),
+pz1 <- sparsity(medip.rcc_noMet, CS)
+pz2 <- sparsity(medip.control, CS)
+pz <- rbind(pz1 %>% mutate(type=ifelse(grepl("s", pz1$lab), "Met", "RCC")),
             pz2 %>% mutate(type="Control")) %>%
       mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
       mutate(sparse=ifelse(pzero>0.9, TRUE, FALSE))
+x <- match(paste0(pz$lab, pz$type), 
+  paste0(ifelse(master$Batch=="Met", tolower(master$ID), master$ID), 
+    ifelse(master$Batch=="Met", "Met", master$Status)))
+pz$Institution <- master$Institution[x]
 
 if (iter == 1){
 
 pz %>%
  ggplot(aes(x=type, y=pzero, colour=Batch))+ 
- geom_boxplot() + 
+ geom_boxplot(outlier.shape = NA) + 
  geom_jitter(position = position_jitterdodge(jitter.width=0.1))
-#ggsave(file.path(outdir, "..", "boxplot_sparsity_batch.pdf"),
-#  width=5, height=5)
+# ggsave(file.path(outdir, "..", "boxplot_sparsity_batch.pdf"), width=5, height=5)
+
+
+pz %>%
+ ggplot(aes(x=type, y=nocpg, colour=Batch, shape=Institution))+ 
+ geom_boxplot(outlier.shape = NA) + 
+ geom_jitter(position = position_jitterdodge(jitter.width=0.1))
+# ggsave(file.path(outdir, "..", "boxplot_noCpG_batch.pdf"), width=5, height=5)
+
+ pz %>%
+ ggplot(aes(x=nocpg, y=pzero, color=type, shape=Batch))+ 
+ facet_wrap(~Institution)+
+ geom_point() 
+ # ggsave(file.path(outdir, "..", "boxplot_sparsityVSnoCpG_batch.pdf"), width=7, height=7)
 
 dir.create(file.path(outdir, "../pooled_m"))
 dir.create(file.path(outdir, "../pooled"))
@@ -1507,7 +1538,7 @@ compute.diff(obj1 = medip.rcc_noMet[pz1$pzero < 0.9],
 # sanity check - training/test across both batches
 if(iter <= 25){
    outdir_iterm <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", 
-    ws, "/batch/iter_Combined", 
+    ws, "/sparsity/iter_Combined_", 
     str_pad(iter, 3, pad = "0"))
   dir.create(outdir_iterm, showWarnings = FALSE)
 
@@ -1547,7 +1578,6 @@ if (FALSE){
            out.dir = outdir_iterm, top = ntop,
            direction = "down")
 
-}
   compute.diff(obj1 = medip.urineR, 
            obj2 = medip.urineC,
            lab1 = "urineR_downAdj", lab2 = "urineC_downAdj",
@@ -1561,6 +1591,115 @@ if (FALSE){
            lab1 = "rcc_noDFCI", lab2 = "control",
            training = 0.8,
            out.dir = outdir_iterm, top = ntop)
+
+}
+
+# to add in: full set B1, B2 and Met adj for sparsity
+rm(medip.rcc_noMet_noDFCI)
+gc()
+
+# full set
+pz1 <- sparsity(medip.rcc, CS)
+pz2 <- sparsity(medip.control, CS)
+compute.diff(obj1 = medip.rcc[pz1$pzero < 0.90 & pz1$nocpg < 0.05], 
+           obj2 = medip.control[pz2$pzero < 0.90 & pz2$nocpg < 0.05],
+           lab1 = "rcc", lab2 = "control",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE)
+
+# full set, min CpG=3
+pz1 <- sparsity(medip.rcc, CS)
+pz2 <- sparsity(medip.control, CS)
+compute.diff(obj1 = medip.rcc[pz1$pzero < 0.90 & pz1$nocpg < 0.05], 
+           obj2 = medip.control[pz2$pzero < 0.90 & pz2$nocpg < 0.05],
+           lab1 = "rccReg", lab2 = "controlReg",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE, 
+           minCpG = 3)
+
+rm(medip.rcc)
+gc()
+
+# no met
+  pz1 <- sparsity(medip.rcc_noMet, CS)
+  pz2 <- sparsity(medip.control, CS)
+  compute.diff(obj1 = medip.rcc_noMet[pz1$pzero < 0.90 & pz1$nocpg < 0.05], 
+           obj2 = medip.control[pz2$pzero < 0.90 & pz2$nocpg < 0.05],
+           lab1 = "rccNoMet", lab2 = "control",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE)
+
+  pz1 <- sparsity(c(medip.rcc_B1, medip.rcc_M), CS)
+  pz2 <- sparsity(medip.control_B1, CS)
+
+rm(medip.rcc_noMet)
+gc()
+
+  compute.diff(obj1 = c(medip.rcc_B1, medip.rcc_M)[pz1$pzero < 0.90 & pz1$nocpg < 0.05], 
+           obj2 = medip.control_B1[pz2$pzero < 0.90 & pz2$nocpg < 0.05],
+           lab1 = "rccB1Met", lab2 = "controlB1",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE)
+
+  rm(medip.rcc_B1)
+  rm(medip.control_B1)
+  gc()
+
+  pz1 <- sparsity(medip.rcc_noMet_noMGH, CS)
+  pz2 <- sparsity(medip.control, CS)
+
+  compute.diff(obj1 = medip.rcc_noMet_noMGH[pz1$pzero < 0.90 & pz1$nocpg < 0.05], 
+           obj2 = medip.control[pz2$pzero < 0.90 & pz2$nocpg < 0.05],
+           lab1 = "rccNoMGH", lab2 = "control",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE)
+
+  rm(medip.rcc_noMet_noMGH)
+  rm(medip.control)
+  gc()
+
+  pz1 <- sparsity(medip.urineR, CS)
+  pz2 <- sparsity(medip.urineC, CS)
+
+  # full urine set
+  compute.diff(obj1 = medip.urineR[pz1$nocpg < 0.125], 
+           obj2 = medip.urineC[pz2$nocpg < 0.125],
+           lab1 = "urineR", lab2 = "urineC",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE)
+ 
+ # full urine set, min cpg 3
+ compute.diff(obj1 = medip.urineR[pz1$nocpg < 0.125], 
+           obj2 = medip.urineC[pz2$nocpg < 0.125],
+           lab1 = "urineRreg", lab2 = "urineCreg",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE,
+           minCpG=3)
+
+  pz1 <- sparsity(medip.urineR_noMGH, CS)
+  pz2 <- sparsity(medip.urineC, CS)
+
+  compute.diff(obj1 = medip.urineR_noMGH[pz1$nocpg < 0.125], 
+           obj2 = medip.urineC[pz2$nocpg < 0.125],
+           lab1 = "urineRnoMGH", lab2 = "urineC",
+           training=0.8,
+           out.dir = outdir_iterm, top = ntop,
+           detRate=TRUE, 
+           overwrite = TRUE)
 
 }
 
@@ -1619,3 +1758,62 @@ if(as.numeric(iter) <= length(medip.urineC)){
              batch=batch_urine, detRate=TRUE)
 }
 }
+
+
+pz1 <- sparsity(medip.urineR, CS)
+pz2 <- sparsity(medip.urineC, CS)
+pz <- rbind(pz1 %>% mutate(type="RCC"),
+            pz2 %>% mutate(type="Control")) %>%
+      mutate(Batch=ifelse(grepl("_", lab), "Batch2", "Batch1"))%>%
+      mutate(sparse=ifelse(pzero>0.9, TRUE, FALSE))
+x <- match(paste0(pz$lab, pz$type), paste0(master$ID, master$Status))
+pz$Institution <- master$Institution[x]
+
+pz %>%
+ ggplot(aes(x=type, y=pzero, colour=Batch))+ 
+ geom_boxplot(outlier.shape=NA) + 
+ geom_jitter(position = position_jitterdodge(jitter.width=0.1))
+#ggsave(file.path(outdir, "..", "boxplot_sparsity_batch_urine.pdf"),
+ # width=5, height=5)
+
+
+pz %>%
+ ggplot(aes(x=type, y=nocpg, colour=Batch, shape=Institution))+ 
+ geom_boxplot(outlier.shape = NA) + 
+ geom_jitter(position = position_jitterdodge(jitter.width=0.1))
+#ggsave(file.path(outdir, "..", "boxplot_noCpG_batch_urine.pdf"),
+#  width=5, height=5)
+
+ pz %>%
+ ggplot(aes(x=nocpg, y=pzero, color=type, shape=Batch))+ 
+ facet_wrap(~Institution)+
+ geom_point() 
+ #ggsave(file.path(outdir, "..", "boxplot_sparsityVSnoCpG_batch_urine.pdf"),
+#  width=7, height=7)
+
+
+ # sparsity metrics on decarvhalo data
+medip.rcc_D <- readRDS(file.path(medipdir, "medip.rcc_D.rds"))
+medip.control_D <- readRDS(file.path(medipdir, "medip.control_D.rds"))
+pz1 <- sparsity(medip.rcc_D, CS)
+pz2 <- sparsity(medip.control_D, CS)
+pz <- rbind(pz1 %>% mutate(type="RCC"),
+            pz2 %>% mutate(type="Control"))
+
+pz %>%
+ ggplot(aes(x=type, y=pzero, colour=type))+ 
+ geom_boxplot(outlier.shape = NA) + 
+ geom_jitter(width=0.2)
+# ggsave(file.path(outdir, "..", "boxplot_sparsity_batch_decarvalho.pdf"), width=5, height=5)
+
+
+pz %>%
+ ggplot(aes(x=type, y=nocpg, colour=type))+ 
+ geom_boxplot(outlier.shape = NA) + 
+ geom_jitter(width=0.2)
+# ggsave(file.path(outdir, "..", "boxplot_noCpG_batch_decarvalho.pdf"), width=5, height=5)
+
+ pz %>%
+ ggplot(aes(x=nocpg, y=pzero, color=type))+ 
+ geom_point() 
+ # ggsave(file.path(outdir, "..", "boxplot_sparsityVSnoCpG_batch_decarvalho.pdf"), width=5, height=5)

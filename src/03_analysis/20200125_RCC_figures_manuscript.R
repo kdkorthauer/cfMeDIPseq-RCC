@@ -618,7 +618,7 @@ ggsave(file.path(savedir_met, "boxplot_risk_score_summary_100iter_splitControls.
 
 # RCC all
 # file list
-itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
+itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/sparsity")  
 
 savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
 

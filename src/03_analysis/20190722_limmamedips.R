@@ -14,11 +14,13 @@ MEDIPS.meth = function(
 		CNV=FALSE,
 		MeDIP=FALSE,
 		minRowSum=10,
+		minCpG=0,
 		diffnorm="tmm",
 		batch=NULL,
 		detRate=FALSE
 		)
 {
+
 	nMSets1 = length(MSet1)	
 	nMSets2 = length(MSet2)	
 	nISets1 = length(ISet1)	
@@ -87,7 +89,7 @@ MEDIPS.meth = function(
 	if(MeDIP){
 		base = data.frame(chr=as.vector(seqnames(GRanges.genome)), start=start(GRanges.genome), stop=end(GRanges.genome), CF=genome_CF(CSet), stringsAsFactors=F)
 	}else{
-		base = data.frame(chr=as.vector(seqnames(GRanges.genome)), start=start(GRanges.genome), stop=end(GRanges.genome), stringsAsFactors=F)
+		base = data.frame(chr=as.vector(seqnames(GRanges.genome)), start=start(GRanges.genome), stop=end(GRanges.genome), CF=genome_CF(CSet), stringsAsFactors=F)
 	}
 
 	rm(controlSet)
@@ -257,9 +259,9 @@ MEDIPS.meth = function(
 			}
 		
 		    if(diff.method=="edgeR"){
-			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="edgeR", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm)
+			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="edgeR", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, minCpG=minCpG)
 			}else{
-			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch, detRate=detRate)
+			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch, detRate=detRate, minCpG=minCpG)
 			}
 		}else if(diff.method=="ttest"){
 
@@ -268,11 +270,13 @@ MEDIPS.meth = function(
 			}
 
 			if(diffnorm=="rpkm"){
-				diff.results.list = MEDIPS.diffMeth(base=base, values=rpkm.medip, diff.method="ttest", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, MeDIP=MeDIP, minRowSum=minRowSum)
+				diff.results.list = MEDIPS.diffMeth(base=base, values=rpkm.medip, diff.method="ttest", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, MeDIP=MeDIP, minRowSum=minRowSum, 
+					minCpG=minCpG)
 			}
 			else if(diffnorm=="rms"){
 				if(MeDIP){
-					diff.results.list = MEDIPS.diffMeth(base=base, values=rms, diff.method="ttest", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, MeDIP=MeDIP, minRowSum=minRowSum)
+					diff.results.list = MEDIPS.diffMeth(base=base, values=rms, diff.method="ttest", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, MeDIP=MeDIP, minRowSum=minRowSum, 
+						minCpG=minCpG)
 				}
 				else{
 					stop("Invalid specification for parameter diffnorm because parameter MeDIP is FALSE (no rms values have been calculated).")
@@ -468,8 +472,9 @@ MEDIPS.meth = function(
 
 
 MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets1=NULL, nMSets2=NULL, n.r.M1=n.r.M1, n.r.M2=n.r.M2, p.adj="bonferroni", MeDIP, minRowSum=10, diffnorm="tmm", batch=NULL,
-	detRate = FALSE)
+	detRate = FALSE, minCpG=0)
 {
+
 	##edgeR##
 	#########
 	if(diff.method=="edgeR"){		
@@ -484,8 +489,13 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 			filter=filter & base[,4]!=0
 		}
 
+	    ##Extract rows with at least minCpG cpgs
+		if(minCpG>0){
+			cat(paste("Extracting CpGs with at least ", minCpG, " CpGs...\n", sep=" "))
+			filter=filter & base[,4]>=minCpG
+		}
+
 		cat(paste("Execute edgeR for count data of", sum(filter), "windows...\n", sep=" "))
-		cat("(Neglecting parameter 'type')\n")
 
 		cat("Creating a DGEList object...\n")						
 		edRObj.group=c(rep(1, nMSets1), rep(2, nMSets2))
@@ -537,6 +547,12 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 		if(MeDIP){
 			cat(paste("Extracting non-zero coupling factor windows...\n", sep=" "))
 			filter=filter & base[,4]!=0
+		}
+
+	    ##Extract rows with at least minCpG cpgs
+		if(minCpG>0){
+			cat(paste("Extracting CpGs with at least ", minCpG, " CpGs...\n", sep=" "))
+			filter=filter & base[,4]>=minCpG
 		}
 
 		cat(paste("Execute limma for count data of", sum(filter), "windows...\n", sep=" "))
