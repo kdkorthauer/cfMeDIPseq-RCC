@@ -17,7 +17,8 @@ MEDIPS.meth = function(
 		minCpG=0,
 		diffnorm="tmm",
 		batch=NULL,
-		detRate=FALSE
+		detRate=FALSE,
+		minNonzero=0
 		)
 {
 
@@ -259,9 +260,9 @@ MEDIPS.meth = function(
 			}
 		
 		    if(diff.method=="edgeR"){
-			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="edgeR", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, minCpG=minCpG)
+			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="edgeR", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, minCpG=minCpG, minNonzero=minNonzero)
 			}else{
-			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch, detRate=detRate, minCpG=minCpG)
+			  diff.results.list = MEDIPS.diffMeth(base=base, values=counts.medip, diff.method="limma", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, n.r.M1=n.r.M1, n.r.M2=n.r.M2, MeDIP=MeDIP, minRowSum=minRowSum, diffnorm=diffnorm, batch=batch, detRate=detRate, minCpG=minCpG, minNonzero=minNonzero)
 			}
 		}else if(diff.method=="ttest"){
 
@@ -271,12 +272,12 @@ MEDIPS.meth = function(
 
 			if(diffnorm=="rpkm"){
 				diff.results.list = MEDIPS.diffMeth(base=base, values=rpkm.medip, diff.method="ttest", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, MeDIP=MeDIP, minRowSum=minRowSum, 
-					minCpG=minCpG)
+					minCpG=minCpG, minNonzero=minNonzero)
 			}
 			else if(diffnorm=="rms"){
 				if(MeDIP){
 					diff.results.list = MEDIPS.diffMeth(base=base, values=rms, diff.method="ttest", nMSets1=nMSets1, nMSets2=nMSets2, p.adj=p.adj, MeDIP=MeDIP, minRowSum=minRowSum, 
-						minCpG=minCpG)
+						minCpG=minCpG, minNonzero=minNonzero)
 				}
 				else{
 					stop("Invalid specification for parameter diffnorm because parameter MeDIP is FALSE (no rms values have been calculated).")
@@ -472,7 +473,7 @@ MEDIPS.meth = function(
 
 
 MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets1=NULL, nMSets2=NULL, n.r.M1=n.r.M1, n.r.M2=n.r.M2, p.adj="bonferroni", MeDIP, minRowSum=10, diffnorm="tmm", batch=NULL,
-	detRate = FALSE, minCpG=0)
+	detRate = FALSE, minCpG=0, minNonzero=0)
 {
 
 	##edgeR##
@@ -482,6 +483,12 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 		##Extract non-zero MeDIP count windows
 		cat(paste("Extracting count windows with at least", minRowSum, "reads...\n", sep=" "))
 		filter= rowSums(values)>=minRowSum
+
+        # extract windows with at least x% of samples with coverage
+        if (minNonzero>0){
+		  cat(paste("Extracting count windows with at least", 100*minNonzero, "% of samples covered...\n", sep=" "))
+		  filter= filter & rowMeans(values>0) >= minNonzero
+        }
 
 		##Extract non-zero coupling factor rows
 		if(MeDIP){
@@ -548,6 +555,12 @@ MEDIPS.diffMeth = function(base = NULL, values=NULL, diff.method="ttest", nMSets
 			cat(paste("Extracting non-zero coupling factor windows...\n", sep=" "))
 			filter=filter & base[,4]!=0
 		}
+
+       # extract windows with at least x% of samples with coverage
+        if (minNonzero>0){
+		  cat(paste("Extracting count windows with at least", 100*minNonzero, "% of samples covered...\n", sep=" "))
+		  filter= filter & rowMeans(values>0) >= minNonzero
+        }
 
 	    ##Extract rows with at least minCpG cpgs
 		if(minCpG>0){

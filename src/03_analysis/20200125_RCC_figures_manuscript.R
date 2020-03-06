@@ -32,13 +32,7 @@ res <- NULL
 
 # dir where binned medips objects of all samples are saved
 outdir <- paste0("/arc/project/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)
-savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
-
-# read in spread sheet with stage/grade/histology
-grade <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Stage-Grade-Histology Analysis.xlsx")
-
-meta <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Keegan - RCC plasma.xlsx", 
-  sheet = 1)
+savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/revisions/pooled")
 
 medip.rcc <- readRDS(file.path(outdir, "medip.rcc.rds"))
 medip.rcc <- medip.rcc[!sapply(medip.rcc, function(x) x@sample_name) %in% c("S007.sorted.bam", "S011.sorted.bam", "S020.sorted.bam", "S015.sorted.bam", "S050.sorted.bam")]
@@ -61,18 +55,9 @@ medip.jan2020 <- readRDS(file.path(outdir, "medip.jan2020.rds")) # already filte
 # create pooled set
 
 # joint metadata for RCC samps
-meta1 <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Keegan - RCC plasma.xlsx", 
-  sheet = 1)
 meta2 <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20200108_Sample List.xlsx")
 m2 <- data.frame(ID=gsub(".sorted.bam", "", sapply(medip.jan2020, function(x) x@sample_name))) %>%
 left_join(meta2, by = "ID")
-
-meta <- rbind(data.frame("Sample number"=meta1$`Sample number`,
-                   Histology=meta1$Histology,
-                   Group = 1),
-        data.frame("Sample number"=meta2$ID,
-                   Histology=tolower(meta2$Histology),
-                   Group = 2))
 
 # master metadata
 master <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20.01.31 - Final Sample List for NM Revisions.xlsx", 
@@ -96,16 +81,9 @@ if(length(excl) > 0)
 
 
 # joint medips objs
-
-medip.rcc_B1 <- medip.rcc
-medip.rcc_B2 <- medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"]
-medip.control_B2 <- medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"]
-medip.rcc_noM <-  c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"])
-medip.rcc <- c(medip.rcc, medip.jan2020[m2$Source=="Plasma" & m2$Status == "RCC"], medip.rcc_M)
-medip.control <- c(medip.control, medip.jan2020[m2$Source=="Plasma" & m2$Status == "Control"])
+medip.rcc <- c(medip.rcc, medip.rcc_M)
 medip.urineR <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"])
 medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"])
-
 
 
 ################# volcanoes
@@ -124,6 +102,8 @@ plotVolcano <- function(diff.file, sig=0.1){
         hjustvar = c(-0.8,1.5) ,
         vjustvar = c(2,2)) #<- adjust
 
+  # reverse direction to reflect gain = gain in RCC 
+  dmrs$logFC <- -1*dmrs$logFC
 
   message(sum(dmrs$limma.adj.p.value < sig & dmrs$logFC < 0), " Lost")
   message(sum(dmrs$limma.adj.p.value < sig & dmrs$logFC > 0), " Gained")
@@ -153,24 +133,25 @@ plotVolcano <- function(diff.file, sig=0.1){
 
   plt <- ggplot(dmrs, aes(x=logFC, y=-log10(limma.adj.p.value))) +
       stat_binhex(data=dmrs[-allsig,], bins=150) +
-      #scale_fill_distiller(type="seq", direction = 1, palette="BuPu") +
       scale_fill_viridis_c(direction=-1) +
       geom_point(data=dmrs[allsig,],
         color="red", size=0.6, alpha=0.4) +
       xlab("DNA Methylation (log2 Fold Change)") +
       ylab("Significance (-log10 q-value)") + 
-      geom_hline(yintercept=-log10(sig), colour="darkgrey", linetype="dashed") +
+      geom_hline(yintercept=-log10(sig), 
+        colour="darkgrey", linetype="dashed") +
       geom_vline(xintercept=0) +
       geom_text(data=annotations,aes(x=xpos,y=ypos,hjust=hjustvar,
         vjust=vjustvar,label=annotateText))+
-      geom_text(data=annotations,aes(x=1.6,y=-log10(sig),label="FDR<0.05"))
+      geom_text(data=annotations,aes(x=1.6,y=-log10(sig),
+        label=paste0("FDR<", sig)))
 
   return(plt)
 }
 
 
 volcano_plasma <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds"),
-  sig=0.05)
+  sig=0.01)
 volcano_plasma
 ggsave(file.path(savedir, "volcano_plasma.pdf"), width=5, height=4)
 
@@ -178,20 +159,6 @@ volcano_urine <- plotVolcano(diff.file =file.path(savedir, "urineR.urineC.diff.r
   sig=0.05)
 volcano_urine
 ggsave(file.path(savedir, "volcano_urine.pdf"), width=5, height=4)
-
-
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
-volcano_met <- plotVolcano(diff.file =file.path(savedir_met, "rcc.control.diff.rds"), 
-  sig = 0.05)
-volcano_met
-ggsave(file.path(savedir_met, "volcano_plasma_metTraining.pdf"), width=6, height=4)
-
-
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
-volcano_met <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds"),
-  sig = 0.05)
-volcano_met
-ggsave(file.path(savedir_met, "volcano_plasma_plusmet.pdf"), width=5, height=4)
 
 
 
@@ -426,45 +393,24 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
 CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
 
 # plasma
-savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_m")
+
 # top 300 DMRs
 tidydf_plasma <- makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
   obj1=medip.rcc, obj2=medip.control, label="plasma", ntop=top)
-# all 
-makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
-  obj1=medip.rcc, obj2=medip.control, label="plasma", ntop=NULL)
-
-
-# plasma - NO METS
-savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
-# top 300 DMRs
-tidydf_plasma <- makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
-  obj1=medip.rcc_noM, obj2=medip.control, label="plasma", ntop=top)
-# all 
-makePCAplots(diff.file=file.path(savedir, "rcc.control.diff.rds"), 
-  obj1=medip.rcc_noM, obj2=medip.control, label="plasma", ntop=NULL)
 
 # urine
-savedir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
+
 # top 300 DMRs
 tidydf_urine <- makePCAplots(diff.file=file.path(savedir, "urineR.urineC.diff.rds"), 
   obj1=medip.urineR, obj2=medip.urineC, label="urine", ntop=top)
-# all
-makePCAplots(diff.file=file.path(savedir, "urineR.urineC.diff.rds"), 
-  obj1=medip.urineR, obj2=medip.urineC, label="urine", ntop=NULL)
 
 ################# AUC summary 
 
 # RCCmet
 # file list
-itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
 
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled_c")
-
-files <- list.files(file.path(itdir), pattern = "vRCCmet_top300.txt", recursive = TRUE, 
- full.names = TRUE)
-files <- files[grepl("iter", files)]
-
+files <- list.files(file.path(savedir, ".."), pattern = "sampleprob_table", 
+  recursive = TRUE, full.names = TRUE)
 
 tmp <- files %>%
   purrr::map(read_tsv)
@@ -478,34 +424,81 @@ tmp <- tmp %>%
   do.call("rbind", .) 
 idx <- stringr::str_locate(tmp$filename[1], "iter_")[2]
 tmp$iteration = substr(tmp$filename, idx+1, idx+3)
+tmp <- mutate(tmp, type = ifelse(true_label %in% c("rcc", "control", "blca"), "Plasma", "Urine"))
+tmp <- mutate(tmp, grp = ifelse(grepl("blca", filename), "ubc", "rcc"))
 
 # auc table
-auc_summary <- tmp %>% 
-  group_by(iteration) %>%
-  summarize(auc = mean(auc, na.rm = TRUE)) %>%
+auc_summary <- tmp %>%
+  group_by(iteration,type,grp) %>%
+  summarize(auc=unique(auc)) %>%
+  group_by(type, grp) %>%
   summarize(meanAUC = mean(auc, na.rm = TRUE),
             sdAUC = sd(auc, na.rm = TRUE),
             n = n(),
-            lowerAUC = meanAUC - qnorm(0.975)*sdAUC/sqrt(n),
-            upperAUC = meanAUC + qnorm(0.975)*sdAUC/sqrt(n))
-
-
+            lowerAUC = max(0, meanAUC - qnorm(0.975)*sdAUC/sqrt(n)),
+            upperAUC = min(meanAUC + qnorm(0.975)*sdAUC/sqrt(n), 1))
+auc_summary
 write.table(auc_summary, quote=FALSE, row.names=FALSE,
-  file=file.path(savedir_met, "auc_summary_100iter_splitControls.txt"))
+  file=file.path(savedir, "..", "auc_summary_100iter.txt"))
 
 # plot of AUC
 
 tmp %>% 
-  group_by(iteration) %>%
+  group_by(iteration,type,grp) %>%
   summarize(auc = mean(auc, na.rm = TRUE)) %>%
-  mutate(x="top300") %>%
-  ggplot(aes(x = x, y = auc)) +
-  geom_boxplot(outlier.shape = NA,fill =  "#56B4E9") +
+  ggplot(aes(x = interaction(type,grp), y = auc)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color=interaction(type,grp)), height = 0, alpha = 0.3)+
+  ylim(0,1) +
+  xlab("")+ylab("AUC") +
+  theme(legend.position = "none")
+ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter.pdf"),
+  width=4, height=3)
+
+
+tmp %>% filter(type=="Plasma" & grp=="rcc") %>%
+  group_by(iteration, type) %>%
+  summarize(auc = mean(auc, na.rm = TRUE)) %>%
+  ggplot(aes(x = type, y = auc)) +
+  geom_boxplot(outlier.shape = NA) +
   geom_jitter(height = 0, alpha = 0.3)+
   ylim(0,1) +
-  xlab("")+ylab("AUC") 
-ggsave(file=file.path(savedir_met, "boxplot_auc_summary_100iter_splitControls.pdf"),
+  xlab("")+ylab("AUC") +
+  theme(legend.position = "none")
+
+ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter_plasma.pdf"),
   width=4, height=3)
+
+
+
+tmp %>% filter(type=="Urine") %>%
+  group_by(iteration, type) %>%
+  summarize(auc = mean(auc, na.rm = TRUE)) %>%
+  ggplot(aes(x = type, y = auc)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(height = 0, alpha = 0.3)+
+  ylim(0,1) +
+  xlab("")+ylab("AUC") +
+  theme(legend.position = "none")
+
+ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter_urine.pdf"),
+  width=4, height=3)
+
+
+tmp %>% filter(grp=="ubc") %>%
+  group_by(iteration, type) %>%
+  summarize(auc = mean(auc, na.rm = TRUE)) %>%
+  ggplot(aes(x = type, y = auc)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(height = 0, alpha = 0.3)+
+  ylim(0,1) +
+  xlab("")+ylab("AUC") +
+  theme(legend.position = "none")
+
+ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter_urine.pdf"),
+  width=4, height=3)
+
+
 
 
 # sample-level score summary
@@ -533,13 +526,15 @@ sortLvlsByVar.fnc <- function(oldFactor, sortingVariable, ascending = TRUE) {
   
   # Compute average of sortingVariable and arrange (ascending)
   if (ascending == TRUE) {
-    df_av <- df %>% group_by(oldFactor) %>% summarise(meanSortingVariable = median(sortingVariable, na.rm=TRUE)) %>% 
+    df_av <- df %>% group_by(oldFactor) %>% 
+      summarise(meanSortingVariable = median(sortingVariable, na.rm=TRUE)) %>% 
       arrange(meanSortingVariable)
   }
   
   # Compute average of sortingVariable and arrange (descending)
   if (ascending == FALSE) {
-    df_av <- df %>% group_by(oldFactor) %>% summarise(meanSortingVariable = median(sortingVariable, na.rm=TRUE)) %>% 
+    df_av <- df %>% group_by(oldFactor) %>%
+      summarise(meanSortingVariable = median(sortingVariable, na.rm=TRUE)) %>% 
       arrange(desc(meanSortingVariable))
   }
   
@@ -547,39 +542,7 @@ sortLvlsByVar.fnc <- function(oldFactor, sortingVariable, ascending = TRUE) {
   newFactor <- factor(oldFactor, levels = df_av$oldFactor)
   return(newFactor)
 }
-
-# Sort factor levels by their frequency of occurrence
-sortLvlsByN.fnc <- function(oldFactor, ascending = TRUE) {
-
-  require("magrittr")
-  
-  # Return factor with new level order
-  newFactor <- factor(oldFactor, levels = table(oldFactor)  %>% sort(., decreasing = !ascending)  %>% names())
-  return(newFactor)
-}
-
-# Sort factor levels arbitrarily
-sortLvls.fnc <- function(oldFactor, levelOrder) {
-  if(!is.factor(oldFactor)) stop("The variable you want to reorder isn't a factor.")
-  
-  if(!is.numeric(levelOrder)) stop("'order' should be a numeric vector.")
-  
-  if(max(levelOrder) > length(levels(oldFactor))) stop("The largest number in 'order' can't be larger than the number of levels in the factor.")
-  
-  if(length(levelOrder) > length(levels(oldFactor))) stop("You can't have more elements in 'order' than there are levels in the factor.")
-  
-  if(length(levelOrder) == length(levels(oldFactor))) {
-    reorderedFactor <- factor(oldFactor, levels = levels(oldFactor)[levelOrder])
-  }
-  
-  if(length(levelOrder) < length(levels(oldFactor))) {
-    levelOrderAll <- c(levelOrder, (1:length(levels(oldFactor)))[-levelOrder])
-    reorderedFactor <- factor(oldFactor, levels = levels(oldFactor)[levelOrderAll])
-  }
-  
-  return(reorderedFactor)
-}
-####  end functions to reorder
+####  end function to reorder
 
 
 risk_summary <- tmp %>% group_by(sample_name) %>%
@@ -590,253 +553,199 @@ risk_summary <- tmp %>% group_by(sample_name) %>%
             upper_RCC_risk_score = mean_RCC_risk_score + qnorm(0.975)*sd_RCC_risk_score/sqrt(n),
             true_label = unique(true_label))
 write.table(risk_summary, quote=FALSE, row.names=FALSE,
-  file=file.path(savedir_met, "RCC_risk_score_summary_100iter_splitControls.txt"))
+  file=file.path(savedir, "RCC_risk_score_summary_100iter_splitControls.txt"))
 
 
 cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
-sample_probs <- tmp %>% mutate(true_label = ifelse(true_label == "rcc", "RCC", "Control")) %>%
-  mutate(sample_name = gsub("control_|rcc_", "", sample_name)) 
+cols_ubc <- c("RCC" = "#56B4E9", "UBC" = "#E69F00")
+sample_probs_all <- tmp %>% 
+  mutate(true_label = ifelse(true_label %in% c("urineR", "rcc"), "RCC",
+                      ifelse(true_label == "blca", "UBC", "Control"))) %>%
+  mutate(sample_name = gsub("control_|rcc_|blca_", "", sample_name)) 
+
+
+# rcc plasma
+
+sample_probs <- filter(sample_probs_all, grp=="rcc" & type=="Plasma") %>%
+  mutate(id = sample_name,
+    sample_name = paste0(true_label, "_", sample_name))
 
 sample_probs$sample_name <- as.factor(sample_probs$sample_name)
-sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name, sample_probs$class_prob)
+sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name,
+  sample_probs$class_prob)
 
-sample_probs %>%
+p_rcc <- sample_probs %>%
   ggplot(aes(x = sample_name, y = class_prob, color = true_label)) +
   geom_boxplot() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) +
-  labs(fill = "True class") + 
+  theme(axis.text.x = element_blank()) +
+  labs(color = "True class") + 
   scale_color_manual(values = cols) + 
   ylab("RCC Risk Score") + xlab("Sample") +
   ylim(0,1)
-ggsave(file.path(savedir_met, "boxplot_risk_score_summary_100iter_splitControls.pdf"),
+ggsave(p_rcc,
+  file =file.path(savedir, "boxplot_risk_score_summary_100iter_rcc_plasma.pdf"),
   width = 6, height = 3)
 
+rcc <- sample_probs
+
+# rcc urine
+
+sample_probs <- filter(sample_probs_all, grp=="rcc" & type=="Urine") %>%
+  mutate(id = sample_name,
+    sample_name = paste0(true_label, "_", sample_name))
+
+sample_probs$sample_name <- as.factor(sample_probs$sample_name)
+sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name,
+  sample_probs$class_prob)
+
+p_urine <- sample_probs %>%
+  ggplot(aes(x = sample_name, y = class_prob, color = true_label)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(color = "True class") + 
+  scale_color_manual(values = cols) + 
+  ylab("RCC Risk Score") + xlab("Sample") +
+  ylim(0,1)
+ggsave(p_urine, 
+  file = file.path(savedir, "boxplot_risk_score_summary_100iter_rcc_urine.pdf"),
+  width = 6, height = 3)
+
+urine <- sample_probs
+
+# ubc plasma
+
+sample_probs <- filter(sample_probs_all, grp=="ubc" & type=="Plasma") %>%
+  mutate(id = sample_name,
+    sample_name = paste0(true_label, "_", sample_name))
+
+sample_probs$sample_name <- as.factor(sample_probs$sample_name)
+sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name,
+  sample_probs$class_prob)
+
+p_ubc <- sample_probs %>%
+  ggplot(aes(x = sample_name, y = class_prob, color = true_label)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_blank()) +
+  labs(color = "True class") + 
+  scale_color_manual(values = cols_ubc) + 
+  ylab("RCC Risk Score") + xlab("Sample") +
+  ylim(0,1)
+ggsave(p_ubc, 
+  file=file.path(savedir, "boxplot_risk_score_summary_100iter_ubc_plasma.pdf"),
+  width = 6, height = 3)
+
+
+ubc <- sample_probs
+
+# Add stage/grade/histo annotation bar
+library(viridis)
+library(wesanderson)
+
+add_annotations <- function(main, dat){
+  dat <- dat %>% 
+  mutate(Stage = as.factor(ifelse(Stage=="Control", NA, Stage)),
+    Grade = as.factor(ifelse(Grade=="Control", NA, Stage)),
+    Grade = as.factor(ifelse(is.na(Grade) & true_label == "RCC", "Unknown", Stage)))
+
+  anno_stage <- ggplot(dat %>% 
+    distinct(sample_name, Stage)) +
+  geom_bar(mapping = aes(x = sample_name, y = 1,
+   fill = Stage), 
+  stat = "identity", 
+  width = 1)+
+  scale_fill_viridis_d(direction = -1, 
+    guide = guide_legend(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
+    title.theme = element_text(size=8, hjust = 0.5))) +
+  theme_void()
+
+  anno_grade <- ggplot(dat %>% 
+    distinct(sample_name, Grade)) +
+  geom_bar(mapping = aes(x = sample_name, y = 1,
+   fill = Grade), 
+  stat = "identity", 
+  width = 1)+
+  scale_fill_manual(values = c(rev(viridis::viridis(5, option = "magma"))[-1], "grey"),
+    guide = guide_legend(
+    direction = "horizontal",
+    nrow = 1,
+    title.position = "top",
+    label.position = "bottom",
+    position= "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
+    title.theme = element_text(size=8, hjust = 0.5))) +
+  theme_void()
+
+  rmv <- c(1,2,5)
+  if (length(unique(dat$Histology)) == 2)
+    rmv <- c(1,2,4,5)
+
+  anno_hist <- ggplot(dat %>% 
+    distinct(sample_name, Histology)) +
+  geom_bar(mapping = aes(x = sample_name, y = 1,
+   fill = Histology), 
+  stat = "identity", 
+  width = 1)+
+  scale_fill_manual(values = c(wes_palette("Rushmore1", n = 5)[-c(1,2,5)], "#E69F00"),
+    guide = guide_legend(
+    direction = "horizontal",
+    title.position = "top",
+    label.position = "bottom",
+    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+    title.theme = element_text(size=8, hjust = 0.5))) +
+  theme_void()
+
+  legend_anno <- plot_grid(
+    get_legend(anno_stage), 
+    get_legend(anno_grade), 
+    get_legend(anno_hist), 
+    get_legend(main), 
+    ncol = 1)
+  main <- main + theme(legend.position = "none")
+  anno_stage <- anno_stage + theme(legend.position = "none")
+  anno_grade <- anno_grade + theme(legend.position = "none")
+  anno_hist <- anno_hist + theme(legend.position = "none")
+  plot <- plot_grid(anno_stage, anno_grade, anno_hist,
+    main, align = "v", ncol = 1, axis = "tb", 
+    rel_heights = c(0.5, 0.5, 0.5, 15))
+  plot_grid(plot, legend_anno, nrow = 1, rel_widths = c(10, 3))
+
+}
+ 
+# add stage/grade/hist to rcc, urine, ubc tibbles
+master <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20.01.31 - Final Sample List for NM Revisions.xlsx", 
+  sheet = 3)
+master <- master %>%
+  na_if("N/A") %>%
+  mutate(Histology = tolower(Histology)) %>%
+  mutate(`Sample number` = ifelse(Batch == "Met", tolower(ID), ID)) %>%
+  mutate(Histology = ifelse(Histology %in% c("collecting duct", "chrcc", "xptranslocation"), 
+    "other", Histology))
+
+# start here
+x <- match(paste0(master$Status, "_", master$ID), rcc$sample_name)
+master$Status[x]
+
+#add_annotations(plot + 
+#  theme(axis.title.x=element_blank(),
+#        axis.text.x=element_blank(),
+#        axis.ticks.x=element_blank()), plasma)
+#ggsave(file.path(outdir, "Boxplot_testset_probs_plasma_annotated.pdf"),
+#  width = 7, height = 3.5)
+
+
+
 ########################################################################
 ########################################################################
 ########################################################################
 ########################################################################
-
-# RCC all
-# file list
-itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/sparsity")  
-
-savedir_met <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws, "/pooled")
-
-files <- list.files(file.path(itdir), pattern = "sampleprob_table", 
-  recursive = TRUE, full.names = TRUE)
-files <- files[grepl("hold", files)]
-files <- files[!grepl("hold_m", files)]
-files <- files[!grepl("test", files)]
-
-#files2 <- list.files(file.path(itdir), pattern = "sampleprob_table", 
-  #recursive = TRUE, full.names = TRUE)
-#files2 <- files2[grepl("hold_m", files2)]
-#files2 <- files2[grepl("urine", files2)]
-#files2 <- files2[!grepl("test|adj", files2)]
-#files <- c(files, files2)
-
-tmp <- files %>%
-  purrr::map(read_tsv)
-tmp <- lapply(seq_along(files), 
-  function(x) {
-    mutate(tmp[[x]], 
-      filename=files[x],
-      idx = stringr::str_locate(filename, true_label)[2])
-  }) 
-sample_probs <- tmp %>%
-  do.call("rbind", .) %>% 
-  select(-auc,-class_label) %>%
-  mutate(idx = substr(filename, idx+1, idx+3)) %>%
-  mutate(idx = as.numeric(gsub("([0-9]+).*$", "\\1", idx)))
-
-miss <- NULL
-idx <- sample_probs %>% filter(true_label ==  "rcc") %>% pull(idx)
-miss <- seq_along(medip.rcc_noM)[-idx]
-
-idx <- sample_probs %>% filter(true_label ==  "control") %>% pull(idx)
-miss <- unique(miss, seq_along(medip.control)[-idx])
-
-idx <- sample_probs %>% filter(true_label ==  "urineR") %>% pull(idx)
-miss <- unique(miss, seq_along(medip.urineR)[-idx])
-
-idx <- sample_probs %>% filter(true_label ==  "urineC") %>% pull(idx)
-miss <- unique(miss, seq_along(medip.urineC)[-idx])
-
-paste0(miss, collapse=" ")
-
-
-sample_probs <- mutate(sample_probs,
-  lab = ifelse(true_label %in% c("rcc", "urineR"), "RCC", "Control"))
-cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
-
-sample_probs <- mutate(sample_probs, id=as.character(sample_name)) %>%
-  left_join(tidydf_plasma %>% mutate(id = gsub("ctrl", "control", id)), 
-    by = "id") %>%
-  left_join(tidydf_urine %>% mutate(id = gsub("ctrl", "control", id)), 
-    by = "id") %>%
-  mutate(PC1 = coalesce(PC1.x, PC1.y),
-    PC2 = coalesce(PC2.x, PC2.y),
-    PC3 = coalesce(PC3.x, PC3.y),
-    PC4 = coalesce(PC4.x, PC4.y),
-    type = coalesce(type.x, type.y),
-    subtype = coalesce(subtype.x, subtype.y),
-    Batch = coalesce(Batch.x, Batch.y),
-    pctZero_top = coalesce(pctZero_top.x, pctZero_top.y),
-    pctZero_overall = coalesce(pctZero_overall.x, pctZero_overall.y)) %>%
-  select(-which(grepl("\\.x", names(.)))) %>%
-  select(-which(grepl("\\.y", names(.))))
-
-sample_probs %>% filter(true_label %in% c("rcc", "control")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
-    geom_point(size=2) +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Estimated Probability RCC") +
-    xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=16, height=5, 
-  file=file.path(savedir_met, "dotplot_leave1out_plasma.pdf"))
-
-sample_probs %>% filter(true_label %in% c("urineR", "urineC")) %>%
-  ggplot(aes(x=sample_name, y=class_prob, color=lab, shape=Batch)) +
-    geom_point(size=2) +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Estimated Probability RCC") +
-    xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=11, height=5, 
-  file=file.path(savedir_met, "dotplot_leave1out_urine.pdf"))
-
-# compare risk scores relative to training set
-sample_probs %>% mutate(grp = ifelse(type %in% c("urineR", "urineC"), "urine", "plasma")) %>%
-  mutate(sens_copy = sens, spec_copy = spec,
-    sens = ifelse(lab == "Control", spec_copy, sens),
-    spec = ifelse(lab == "Control", sens_copy, spec)) %>%
-  ggplot(aes(x = lab, y=sens, fill=Batch)) +
-    geom_boxplot() +
-    facet_wrap(~grp) +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Training set sensitivty @ held out score threshold") +
-    xlab("Held out sample category") +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=7, height=4, 
-   file=file.path(savedir_met, "boxplot_leave1out_training_sensitivity.pdf"))
-
-sample_probs %>% mutate(grp = ifelse(type %in% c("urineR", "urineC"), "urine", "plasma")) %>%
-  mutate(sens_copy = sens, spec_copy = spec,
-    sens = ifelse(lab == "Control", spec_copy, sens),
-    spec = ifelse(lab == "Control", sens_copy, spec)) %>%
-  ggplot(aes(x = lab, y=spec, fill=Batch)) +
-    geom_boxplot() +
-    facet_wrap(~grp) +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Training set specificity @ held out score threshold") +
-    xlab("Held out sample category") +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-ggsave(width=7, height=4, 
-   file=file.path(savedir_met, "boxplot_leave1out_training_specificity.pdf"))
-
-sample_probs <- sample_probs %>%
-  mutate(sample_name = gsub("rcc_|control_|urineR_|urineC_", "", sample_name))
-plasma <- sample_probs %>% filter(true_label %in% c("rcc", "control"))
-urine <- sample_probs %>% filter(true_label %in% c("urineR", "urineC")) 
-
-plasma$name2 <- factor((1:nrow(plasma))[order(plasma$class_prob)], 
-  levels = (1:nrow(plasma))[order(plasma$class_prob)])
-urine$name2 <- factor((1:nrow(urine))[order(urine$class_prob)], 
-  levels = (1:nrow(urine))[order(urine$class_prob)])
-
-plasma <- arrange(plasma, class_prob)
-plasma$name2 <- factor((1:nrow(plasma))[order(plasma$class_prob)])
-urine <- arrange(urine, class_prob)
-urine$name2 <- factor((1:nrow(urine))[order(urine$class_prob)])
-
-
-plasma %>% 
-  ggplot(aes(x=name2, 
-    y=class_prob, color=lab, shape=Batch)) +
-    geom_point(size=2) +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Estimated Probability RCC") +
-    xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-    scale_x_discrete(labels=plasma$sample_name)
-ggsave(width=16, height=5, 
-  file=file.path(savedir_met, "dotplot_leave1out_plasma_sorted.pdf"))
-
-urine %>% 
-  ggplot(aes(x=name2, y=class_prob, color=lab, shape=Batch)) +
-    geom_point(size=2) +
-    scale_color_manual(values = cols) +
-    labs(color="True label") +
-    ylab("Estimated Probability RCC") +
-    xlab("Sample") + 
-    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-    scale_x_discrete(labels=urine$sample_name)
-ggsave(width=11, height=4, 
-  file=file.path(savedir_met, "dotplot_leave1out_urine_sorted.pdf"))
-
 
 
 
 ############ Supplementary
-
-
-# compare overlap of dmr sets
-
-# file list
-itdir <- paste0("/scratch/st-kdkortha-1/cfMeDIPseq/out/MEDIPS_", ws)  
-
-files <- list.files(file.path(itdir), pattern = "urineR", 
-  recursive = TRUE, full.names = TRUE)
-files <- files[grepl(".rds", files)]
-files <- files[grepl("hold_m", files)]
-
-siglists <- vector("list", length(files))
-i <- 0
-
-for (diff.file in files){
-  i <- i+1 
-  diff <- readRDS(file=diff.file)
-  message("Fetching sig list for file ", i, ": ", nrow(diff))
-
-  which.up <- which(diff$logFC > 0)
-  which.down <- which(diff$logFC < 0)
-  which.sig.up <- which(rank(diff$P.Value[which.up], 
-      ties.method = "random") <= as.numeric(top)/2)
-
-  which.sig.down <- which(rank(diff$P.Value[which.down], 
-      ties.method = "random") <= as.numeric(top)/2)
-
-  which.sig <- c(which.up[which.sig.up], which.down[which.sig.down])
-
-  siglists[[i]] <- which.sig
-}
-
-siglists <- siglists[!sapply(siglists, is.null)]
-sig <- sapply(siglists, function(x) x)
-
-d <- matrix(nrow = ncol(sig), ncol=ncol(sig))
-diag(d) <- 1
-for (i in 1:nrow(d)){
-  for (j in 1:nrow(d)){
-    if (i<j){
-      d[i,j] <- sum(sig[,i] %in% sig[,j])/nrow(sig)
-    }
-  }
-}
-
-for (i in 1:nrow(d)){
-  for (j in 1:nrow(d)){
-    if (j<i){
-      d[i,j] <- d[j,i]
-    }
-  }
-}
 
 
 ## unique vs duplicate reads for plasma & urine
@@ -1213,90 +1122,3 @@ sf1 <- plot_grid(total + theme(legend.position = "none",
 plot_grid(sf1, leg, ncol=2, rel_widths = c(1,0.25))
 ggsave(file.path(savedir, "SupplementaryFigure1_JAN2020.pdf"), width=12, height=8)
 
-
-
-# Add stage/grade/histo annotation bar
-library(viridis)
-library(wesanderson)
-
-add_annotations <- function(main, dat){
-  dat <- dat %>% 
-  mutate(Stage = as.factor(ifelse(Stage=="Control", NA, Stage)),
-    Grade = as.factor(ifelse(Grade=="Control", NA, Stage)),
-    Grade = as.factor(ifelse(is.na(Grade) & true_label == "RCC", "Unknown", Stage)))
-
-  anno_stage <- ggplot(dat %>% 
-    distinct(sample_name, Stage)) +
-  geom_bar(mapping = aes(x = sample_name, y = 1,
-   fill = Stage), 
-  stat = "identity", 
-  width = 1)+
-  scale_fill_viridis_d(direction = -1, 
-    guide = guide_legend(
-    direction = "horizontal",
-    title.position = "top",
-    label.position = "bottom",
-    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
-    title.theme = element_text(size=8, hjust = 0.5))) +
-  theme_void()
-
-  anno_grade <- ggplot(dat %>% 
-    distinct(sample_name, Grade)) +
-  geom_bar(mapping = aes(x = sample_name, y = 1,
-   fill = Grade), 
-  stat = "identity", 
-  width = 1)+
-  scale_fill_manual(values = c(rev(viridis::viridis(5, option = "magma"))[-1], "grey"),
-    guide = guide_legend(
-    direction = "horizontal",
-    nrow = 1,
-    title.position = "top",
-    label.position = "bottom",
-    position= "bottom",
-    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
-    title.theme = element_text(size=8, hjust = 0.5))) +
-  theme_void()
-
-  rmv <- c(1,2,5)
-  if (length(unique(dat$Histology)) == 2)
-    rmv <- c(1,2,4,5)
-
-  anno_hist <- ggplot(dat %>% 
-    distinct(sample_name, Histology)) +
-  geom_bar(mapping = aes(x = sample_name, y = 1,
-   fill = Histology), 
-  stat = "identity", 
-  width = 1)+
-  scale_fill_manual(values = c(wes_palette("Rushmore1", n = 5)[-c(1,2,5)], "#E69F00"),
-    guide = guide_legend(
-    direction = "horizontal",
-    title.position = "top",
-    label.position = "bottom",
-    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
-    title.theme = element_text(size=8, hjust = 0.5))) +
-  theme_void()
-
-  legend_anno <- plot_grid(
-    get_legend(anno_stage), 
-    get_legend(anno_grade), 
-    get_legend(anno_hist), 
-    get_legend(main), 
-    ncol = 1)
-  main <- main + theme(legend.position = "none")
-  anno_stage <- anno_stage + theme(legend.position = "none")
-  anno_grade <- anno_grade + theme(legend.position = "none")
-  anno_hist <- anno_hist + theme(legend.position = "none")
-  plot <- plot_grid(anno_stage, anno_grade, anno_hist,
-    main, align = "v", ncol = 1, axis = "tb", 
-    rel_heights = c(0.5, 0.5, 0.5, 15))
-  plot_grid(plot, legend_anno, nrow = 1, rel_widths = c(10, 3))
-
-}
-
-#add_annotations(plot + 
-#  ylab("RCC Risk Score") +
-#  theme(axis.title.x=element_blank(),
-#        axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank()), plasma)
-#ggsave(file.path(outdir, "Boxplot_testset_probs_plasma_annotated.pdf"),
-#  width = 7, height = 3.5)

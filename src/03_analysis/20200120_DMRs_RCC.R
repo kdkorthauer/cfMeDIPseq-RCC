@@ -221,6 +221,8 @@ if(!identical(x, 1:nrow(m2)))
 # holdout = integer for which element (sample) to hold out; names() slot must contain either 'obj1' or 'obj2' designating which group the heldout sample is to be chosen.
 # overwrite = logical indicating whether to re-call DMRs (default FALSE; DMRs are loaded from file if it exists)
 # direction = character (either both, up or down) specifying which direction of change to use for DMRs. default is both (half up and half down)
+# minCpG = zero or positive integer value represesenting the minimum number of CpGs that must be present in a region for it to be considered a candidate DMR
+# minNonzero = value between 0 and 1 representing minimum proportion of samples which must have coverage in order for region to be a candidate DMR
 
 # differential coverage
 compute.diff <- function(obj1 = NULL, obj2 = NULL,
@@ -245,7 +247,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
                        detRate= FALSE,
                        overwrite=FALSE,
                        direction="both",
-                       minCpG=0
+                       minCpG=0,
+                       minNonzero=0
                   ){
 
     set.seed(20190814/as.numeric(iter))
@@ -343,7 +346,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
     diff = MEDIPS.meth(MSet1 = obj1[ix1], MSet2 = obj2[ix2],
 	          CSet = CS, diff.method = "limma", chr = chrs,
 		        p.adj = "BH", MeDIP = mdip.opt, minRowSum = 0.2*(n1+n2),
-            detRate=detRate, batch=batch, minCpG=minCpG)
+            detRate=detRate, batch=batch, minCpG=minCpG, 
+            minNonzero=minNonzero)
 	  saveRDS(diff, file = diff.file)
 	}else{
 	  diff <- readRDS(file=diff.file)
@@ -575,6 +579,7 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
 	             show_row_names = FALSE, show_column_names = colnames,
 	             column_names_gp = gpar(fontsize = 8),
                row_dend_reorder = TRUE,
+               column_dend_reorder = TRUE,
                column_title = paste0("Top ", top, 
                 ifelse(merge, " merged", "")))
 
@@ -830,7 +835,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      column_names_gp = gpar(fontsize = 8),
      column_title = paste0("Top ", top, 
        ifelse(merge, " merged", "")),
-     row_order=ht_roworder)
+     row_order=ht_roworder,
+     column_dend_reorder = TRUE)
 
    pdf(heatmap.file.test, width = 9, height=9)
    draw(ht)
@@ -882,7 +888,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
       top_annotation = ha_column, col = ecolors,
       show_row_names = FALSE, show_column_names = colnames,
       column_names_gp = gpar(fontsize = 8),
-      row_order=ht_roworder)
+      row_order=ht_roworder,
+      column_dend_reorder = TRUE)
 
     pdf(heatmap.file.add, width = 8, height=8)
     draw(ht)
@@ -1118,7 +1125,8 @@ compute.diff <- function(obj1 = NULL, obj2 = NULL,
      column_names_gp = gpar(fontsize = 8),
      column_title = paste0("Top ", top, 
        ifelse(merge, " merged", "")),
-     row_order = ht_roworder)
+     row_order = ht_roworder,
+     column_dend_reorder = TRUE)
 
   pdf(heatmap.file.test, width = 9, height=9)
    draw(ht)
@@ -1161,18 +1169,27 @@ if (iter == 1){
 
 dir.create(file.path(outdir, "../pooled"))
 
+if (FALSE){
 compute.diff(obj1 = medip.rcc, obj2 = medip.control,
-           lab1 = "rcc", lab2 = "control",
+           lab1 = "rcc", lab2 = "controlB2",
            out.dir = file.path(outdir, "../pooled"), top = ntop)
 
 compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
            lab1 = "urineR", lab2 = "urineC",
            out.dir = file.path(outdir, "../pooled"), top = ntop)
 }
+# UBC (urothelial bladder cancer) vs RCC
+medip.blca <- readRDS(file.path(medipdir, "medip.blca.rds"))
+compute.diff(obj1 = medip.rcc, obj2 = medip.blca,
+           lab1 = "rcc", lab2 = "blca",
+           out.dir = file.path(outdir, "../pooled"), top = ntop)
+
+}
 
 # training/test eval
 if (iter <= 100){
 
+if (FALSE){
 compute.diff(obj1 = medip.rcc, obj2 = medip.control,
            lab1 = "rcc", lab2 = "control",
            out.dir = outdir, top = ntop,
@@ -1182,5 +1199,54 @@ compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
            lab1 = "urineR", lab2 = "urineC",
            out.dir = outdir, top = ntop,
            training=0.8)
+}
+
+# UBC (urothelial bladder cancer) vs RCC
+medip.blca <- readRDS(file.path(medipdir, "medip.blca.rds"))
+compute.diff(obj1 = medip.rcc, obj2 = medip.blca,
+           lab1 = "rcc", lab2 = "blca",
+           out.dir = outdir, top = ntop,
+           training=0.8)
+
+}
+
+# export counts to wiggle files
+
+if(FALSE){ 
+
+wigdir <- file.path(outdir_root, "../wig")
+dir.create(wigdir)
+
+if (!file.exists(file.path(wigdir, "si.hg19.rds"))){
+  si <- Seqinfo(genome="hg19")
+  saveRDS(si, file= file.path(wigdir, "si.hg19.rds"))
+}else{
+  si <- readRDS(file.path(wigdir, "si.hg19.rds"))
+}
+
+
+saveBW <- function(medip.obj, label){ 
+  wigdirC <- file.path(wigdir, label)
+  dir.create(wigdirC)
+  sn <- gsub(".sorted.bam", "", 
+    sapply(medip.obj, function(x) x@sample_name))
+  for (i in seq_along(medip.obj)){
+    MEDIPS.exportWIG(Set = medip.obj[[i]], CSet=CS, 
+      format="rpkm", 
+      file = file.path(wigdirC, paste0(sn[i], ".wig")),
+      descr=sn[i])
+
+    wigToBigWig(file.path(wigdirC, paste0(sn[i], ".wig")), 
+              seqinfo = si,
+              clip = TRUE)
+    file.remove(file.path(wigdirC, paste0(sn[i], ".wig")))
+  }
+}
+
+saveBW(medip.control, "control_plasma_b1")
+saveBW(medip.rcc, "rcc_plasma_b1_met")
+saveBW(medip.urineR, "rcc_urine_b1_b2")
+saveBW(medip.urineC, "control_urine_b1_b2")
+saveBW(medip.blca, "ubc_plasma_b1")
 
 }
