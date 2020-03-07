@@ -21,7 +21,7 @@ library(BSgenome.Hsapiens.UCSC.hg19)
 library(scatterplot3d)
 library(MEDIPS)
 library(grDevices)
-
+library(plotROC)
 
 theme_set(theme_bw())
 
@@ -89,9 +89,10 @@ medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == 
 ################# volcanoes
 
 # plasma
-plotVolcano <- function(diff.file, sig=0.1){
+plotVolcano <- function(diff.file, sig=0.1, label=""){
   diff <- readRDS(file=diff.file)
   dmrs <- diff[, grepl("adj.p|FC|P.Value", colnames(diff))]
+  diff <- diff[!is.na(dmrs$logFC),]
   dmrs <- dmrs[!is.na(dmrs$logFC),]
 
   #plot
@@ -131,6 +132,16 @@ plotVolcano <- function(diff.file, sig=0.1){
 
   allsig <- c(which.up[which.sig.up], which.down[which.sig.down])
 
+  # print coords of dmrs
+  tab <- diff[allsig,c(1:3)] 
+  tab$direction <- "down"
+  tab$direction[1:as.numeric(top)/2] <- "up"
+  tab <- tab %>% arrange(chr)
+
+  write.table(tab, 
+    sep="\t", quote=FALSE, row.names=FALSE,
+    file=file.path(savedir, paste0("DMR_top300_coords_", label, ".txt")), append=FALSE)
+
   plt <- ggplot(dmrs, aes(x=logFC, y=-log10(limma.adj.p.value))) +
       stat_binhex(data=dmrs[-allsig,], bins=150) +
       scale_fill_viridis_c(direction=-1) +
@@ -151,12 +162,12 @@ plotVolcano <- function(diff.file, sig=0.1){
 
 
 volcano_plasma <- plotVolcano(diff.file =file.path(savedir, "rcc.control.diff.rds"),
-  sig=0.01)
+  sig=0.01, label = "plasma")
 volcano_plasma
 ggsave(file.path(savedir, "volcano_plasma.pdf"), width=5, height=4)
 
 volcano_urine <- plotVolcano(diff.file =file.path(savedir, "urineR.urineC.diff.rds"), 
-  sig=0.05)
+  sig=0.05, label = "urine")
 volcano_urine
 ggsave(file.path(savedir, "volcano_urine.pdf"), width=5, height=4)
 
@@ -194,9 +205,9 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
 
   diff <- readRDS(file=diff.file)
   
-  if(ncol(diff) != 3+2*(length(obj1)+length(obj2))+11)
+  if(ncol(diff) != 3+2*(length(obj1)+length(obj2))+12)
    message("WARNING; diff has ", ncol(diff), " columns. ",
-     "Expecting ", 3+2*(length(obj1)+length(obj2))+11, ".")
+     "Expecting ", 3+2*(length(obj1)+length(obj2))+12, ".")
 
   if (!is.null(ntop)){
     which.up <- which(diff$logFC > 0)
@@ -383,7 +394,7 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
     ggsave(file.path(savedir, paste0("PCA_totalTop_vs_pctZero_", label, ".pdf")), width = 5, height = 5)
 
   write.table(data.frame(PC=1:10, Proportion=(pcs$sdev/sum(pcs$sdev))[1:10]), 
-      quote=FALSE, row.names=FALSE,
+      quote=FALSE, row.names=FALSE, 
       file=file.path(savedir, paste0("PC_proportionVariation_", label, ".txt")), 
       sep = "\t")
 
@@ -438,8 +449,8 @@ auc_summary <- tmp %>%
             lowerAUC = max(0, meanAUC - qnorm(0.975)*sdAUC/sqrt(n)),
             upperAUC = min(meanAUC + qnorm(0.975)*sdAUC/sqrt(n), 1))
 auc_summary
-write.table(auc_summary, quote=FALSE, row.names=FALSE,
-  file=file.path(savedir, "..", "auc_summary_100iter.txt"))
+write.table(format(data.frame(auc_summary), digits=3), quote=FALSE, row.names=FALSE, sep="\t",
+  file=file.path(savedir, "auc_summary_100iter.txt"))
 
 # plot of AUC
 
@@ -452,7 +463,7 @@ tmp %>%
   ylim(0,1) +
   xlab("")+ylab("AUC") +
   theme(legend.position = "none")
-ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter.pdf"),
+ggsave(file=file.path(savedir, "boxplot_auc_summary_100iter.pdf"),
   width=4, height=3)
 
 
@@ -466,7 +477,7 @@ tmp %>% filter(type=="Plasma" & grp=="rcc") %>%
   xlab("")+ylab("AUC") +
   theme(legend.position = "none")
 
-ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter_plasma.pdf"),
+ggsave(file=file.path(savedir, "boxplot_auc_summary_100iter_plasma.pdf"),
   width=4, height=3)
 
 
@@ -481,7 +492,7 @@ tmp %>% filter(type=="Urine") %>%
   xlab("")+ylab("AUC") +
   theme(legend.position = "none")
 
-ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter_urine.pdf"),
+ggsave(file=file.path(savedir, "boxplot_auc_summary_100iter_urine.pdf"),
   width=4, height=3)
 
 
@@ -495,7 +506,7 @@ tmp %>% filter(grp=="ubc") %>%
   xlab("")+ylab("AUC") +
   theme(legend.position = "none")
 
-ggsave(file=file.path(savedir, "..", "boxplot_auc_summary_100iter_urine.pdf"),
+ggsave(file=file.path(savedir, "boxplot_auc_summary_100iter_ubc.pdf"),
   width=4, height=3)
 
 
@@ -545,15 +556,19 @@ sortLvlsByVar.fnc <- function(oldFactor, sortingVariable, ascending = TRUE) {
 ####  end function to reorder
 
 
-risk_summary <- tmp %>% group_by(sample_name) %>%
+risk_summary <- tmp %>%
+  mutate(comparison = ifelse(grepl("blca", filename), "RCC:UBC", "RCC:Ctrl")) %>% 
+  mutate(type = ifelse(grepl("urine", filename), "Urine", "Plasma")) %>% 
+  group_by(sample_name, comparison, type) %>%
   summarize(mean_RCC_risk_score = mean(class_prob),
             sd_RCC_risk_score = sd(class_prob, na.rm = TRUE),
             n = n(),
             lower_RCC_risk_score = mean_RCC_risk_score - qnorm(0.975)*sd_RCC_risk_score/sqrt(n),
             upper_RCC_risk_score = mean_RCC_risk_score + qnorm(0.975)*sd_RCC_risk_score/sqrt(n),
-            true_label = unique(true_label))
-write.table(risk_summary, quote=FALSE, row.names=FALSE,
-  file=file.path(savedir, "RCC_risk_score_summary_100iter_splitControls.txt"))
+            true_label = unique(true_label)) %>% 
+  arrange(comparison, type)
+write.table(format(data.frame(risk_summary), digits=2), quote=FALSE, row.names=FALSE, sep="\t",
+  file=file.path(savedir, "RCC_risk_score_summary_100iter.txt"))
 
 
 cols <- c("RCC" = "#56B4E9", "Control" = "#E69F00")
@@ -564,11 +579,70 @@ sample_probs_all <- tmp %>%
   mutate(sample_name = gsub("control_|rcc_|blca_", "", sample_name)) 
 
 
+# auc curves
+
+# rcc plasma
+sub <- sample_probs_all %>% mutate(truth = as.numeric(true_label=="RCC")) %>%
+  filter(grp=="rcc" & type=="Plasma") 
+curves <- sub %>%
+  group_by(iteration) %>%
+  group_map(~ calculate_roc(D=.x$truth, M=.x$class_prob, ci = FALSE, alpha = 0.05))
+curves <- lapply(1:100, function(x) {
+  cbind(curves[[x]], iteration=x)
+})
+curves <- do.call(rbind, curves)
+
+ggplot() +
+  geom_line(data = curves, aes(x=FPF, y = TPF, group=iteration ), alpha=0.1) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +  
+  geom_roc(data=sub, aes(d = truth, m = class_prob), labels = FALSE, color="blue") 
+ggsave(file =file.path(savedir, "auc_curves_100iterations_rcc_plasma.pdf"),
+  width = 3, height = 3)
+
+# UBC
+sub <- sample_probs_all %>% mutate(truth = as.numeric(true_label=="RCC")) %>%
+  filter(grp=="rcc" & type=="Urine") 
+curves <- sub %>%
+  group_by(iteration) %>%
+  group_map(~ calculate_roc(D=.x$truth, M=.x$class_prob, ci = FALSE, alpha = 0.05))
+curves <- lapply(1:100, function(x) {
+  cbind(curves[[x]], iteration=x)
+})
+curves <- do.call(rbind, curves)
+
+ggplot() +
+  geom_line(data = curves, aes(x=FPF, y = TPF, group=iteration ), alpha=0.1) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +  
+  geom_roc(data=sub, aes(d = truth, m = class_prob), labels = FALSE, color="blue") 
+ggsave(file =file.path(savedir, "auc_curves_100iterations_rcc_urine.pdf"),
+  width = 3, height = 3)
+
+# UBC
+sub <- sample_probs_all %>% mutate(truth = as.numeric(true_label=="RCC")) %>%
+  filter(grp=="ubc") 
+curves <- sub %>%
+  group_by(iteration) %>%
+  group_map(~ calculate_roc(D=.x$truth, M=.x$class_prob, ci = FALSE, alpha = 0.05))
+curves <- lapply(1:100, function(x) {
+  cbind(curves[[x]], iteration=x)
+})
+curves <- do.call(rbind, curves)
+
+ggplot() +
+  geom_line(data = curves, aes(x=FPF, y = TPF, group=iteration ), alpha=0.1) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +  
+  geom_roc(data=sub, aes(d = truth, m = class_prob), labels = FALSE, color="blue") 
+ggsave(file =file.path(savedir, "auc_curves_100iterations_ubc_plasma.pdf"),
+  width = 3, height = 3)
+
+
+
 # rcc plasma
 
 sample_probs <- filter(sample_probs_all, grp=="rcc" & type=="Plasma") %>%
   mutate(id = sample_name,
-    sample_name = paste0(true_label, "_", sample_name))
+    sample_name = paste0(true_label, "_", sample_name, "_", type)) %>% 
+  mutate(sample_name = ifelse(grepl("_s", sample_name), paste0(sample_name, "_Met"), sample_name))
 
 sample_probs$sample_name <- as.factor(sample_probs$sample_name)
 sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name,
@@ -592,7 +666,7 @@ rcc <- sample_probs
 
 sample_probs <- filter(sample_probs_all, grp=="rcc" & type=="Urine") %>%
   mutate(id = sample_name,
-    sample_name = paste0(true_label, "_", sample_name))
+    sample_name = paste0(true_label, "_", gsub("urineR_|urineC_", "", sample_name), "_", type)) 
 
 sample_probs$sample_name <- as.factor(sample_probs$sample_name)
 sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name,
@@ -616,7 +690,9 @@ urine <- sample_probs
 
 sample_probs <- filter(sample_probs_all, grp=="ubc" & type=="Plasma") %>%
   mutate(id = sample_name,
-    sample_name = paste0(true_label, "_", sample_name))
+    sample_name = paste0(true_label, "_", sample_name, "_", type))%>% 
+  mutate(sample_name = ifelse(grepl("_s", sample_name), paste0(sample_name, "_Met"), sample_name))
+
 
 sample_probs$sample_name <- as.factor(sample_probs$sample_name)
 sample_probs$sample_name <- sortLvlsByVar.fnc(sample_probs$sample_name,
@@ -641,14 +717,15 @@ ubc <- sample_probs
 library(viridis)
 library(wesanderson)
 
-add_annotations <- function(main, dat){
-  dat <- dat %>% 
-  mutate(Stage = as.factor(ifelse(Stage=="Control", NA, Stage)),
-    Grade = as.factor(ifelse(Grade=="Control", NA, Stage)),
-    Grade = as.factor(ifelse(is.na(Grade) & true_label == "RCC", "Unknown", Stage)))
+add_annotations <- function(main, dat, met = FALSE){
 
-  anno_stage <- ggplot(dat %>% 
-    distinct(sample_name, Stage)) +
+  dat$sample_name <- as.factor(dat$sample_name)
+  dat$sample_name <- sortLvlsByVar.fnc(dat$sample_name, dat$class_prob)
+  dat <- dat %>% 
+    select(-class_prob, -class_label, -auc, -spec, -sens, -filename, -idx, -iteration) %>%
+    unique() 
+
+  anno_stage <- ggplot(dat)  +
   geom_bar(mapping = aes(x = sample_name, y = 1,
    fill = Stage), 
   stat = "identity", 
@@ -662,29 +739,7 @@ add_annotations <- function(main, dat){
     title.theme = element_text(size=8, hjust = 0.5))) +
   theme_void()
 
-  anno_grade <- ggplot(dat %>% 
-    distinct(sample_name, Grade)) +
-  geom_bar(mapping = aes(x = sample_name, y = 1,
-   fill = Grade), 
-  stat = "identity", 
-  width = 1)+
-  scale_fill_manual(values = c(rev(viridis::viridis(5, option = "magma"))[-1], "grey"),
-    guide = guide_legend(
-    direction = "horizontal",
-    nrow = 1,
-    title.position = "top",
-    label.position = "bottom",
-    position= "bottom",
-    label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size=6),
-    title.theme = element_text(size=8, hjust = 0.5))) +
-  theme_void()
-
-  rmv <- c(1,2,5)
-  if (length(unique(dat$Histology)) == 2)
-    rmv <- c(1,2,4,5)
-
-  anno_hist <- ggplot(dat %>% 
-    distinct(sample_name, Histology)) +
+  anno_hist <- ggplot(dat) +
   geom_bar(mapping = aes(x = sample_name, y = 1,
    fill = Histology), 
   stat = "identity", 
@@ -698,21 +753,50 @@ add_annotations <- function(main, dat){
     title.theme = element_text(size=8, hjust = 0.5))) +
   theme_void()
 
-  legend_anno <- plot_grid(
-    get_legend(anno_stage), 
-    get_legend(anno_grade), 
-    get_legend(anno_hist), 
-    get_legend(main), 
-    ncol = 1)
-  main <- main + theme(legend.position = "none")
-  anno_stage <- anno_stage + theme(legend.position = "none")
-  anno_grade <- anno_grade + theme(legend.position = "none")
-  anno_hist <- anno_hist + theme(legend.position = "none")
-  plot <- plot_grid(anno_stage, anno_grade, anno_hist,
-    main, align = "v", ncol = 1, axis = "tb", 
-    rel_heights = c(0.5, 0.5, 0.5, 15))
-  plot_grid(plot, legend_anno, nrow = 1, rel_widths = c(10, 3))
+  if (met){
+    anno_met <- ggplot(dat %>% mutate(Metastatic = ifelse(grepl("Met", sample_name), "Metastatic", 
+      ifelse(is.na(Stage), NA, "non-Met")))) +
+    geom_bar(mapping = aes(x = sample_name, y = 1,
+     fill = Metastatic), 
+    stat = "identity", 
+    width = 1)+
+    scale_fill_manual(values = c("black", "grey"),
+      guide = guide_legend(
+        direction = "horizontal",
+        title.position = "top",
+        label.position = "bottom",
+        label.theme = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+        title.theme = element_text(size=8, hjust = 0.5))) +
+    theme_void()
 
+    legend_anno <- plot_grid(
+      get_legend(anno_stage), 
+      get_legend(anno_hist), 
+      get_legend(anno_met),
+      get_legend(main), 
+      ncol = 1)
+    main <- main + theme(legend.position = "none")
+    anno_stage <- anno_stage + theme(legend.position = "none")
+    anno_hist <- anno_hist + theme(legend.position = "none")
+    anno_met <- anno_met + theme(legend.position = "none")
+    plot <- plot_grid(anno_stage, anno_hist, anno_met,
+      main, align = "v", ncol = 1, axis = "tb", 
+      rel_heights = c(0.5, 0.5, 0.5, 15))
+    plot_grid(plot, legend_anno, nrow = 1, rel_widths = c(10, 3))
+  }else{
+    legend_anno <- plot_grid(
+      get_legend(anno_stage), 
+      get_legend(anno_hist), 
+      get_legend(main), 
+      ncol = 1)
+    main <- main + theme(legend.position = "none")
+    anno_stage <- anno_stage + theme(legend.position = "none")
+    anno_hist <- anno_hist + theme(legend.position = "none")
+    plot <- plot_grid(anno_stage, anno_hist,
+      main, align = "v", ncol = 1, axis = "tb", 
+      rel_heights = c(0.5, 0.5, 15))
+    plot_grid(plot, legend_anno, nrow = 1, rel_widths = c(10, 3))
+  }
 }
  
 # add stage/grade/hist to rcc, urine, ubc tibbles
@@ -723,19 +807,70 @@ master <- master %>%
   mutate(Histology = tolower(Histology)) %>%
   mutate(`Sample number` = ifelse(Batch == "Met", tolower(ID), ID)) %>%
   mutate(Histology = ifelse(Histology %in% c("collecting duct", "chrcc", "xptranslocation"), 
-    "other", Histology))
+    "other", Histology)) %>%
+  mutate(sample_name =  paste0(Status, "_", ID, "_", Source)) %>%
+  mutate(sample_name = ifelse(Batch == "Met", paste0(sample_name, "_Met"), sample_name))
 
-# start here
-x <- match(paste0(master$Status, "_", master$ID), rcc$sample_name)
-master$Status[x]
+rcc <- rcc %>% 
+  mutate(sample_name = gsub("_s", "_S", sample_name)) %>%
+  left_join(master, by = "sample_name") 
+ubc <- ubc %>% 
+  mutate(sample_name = gsub("_s", "_S", sample_name)) %>%
+  left_join(master, by = "sample_name") 
+urine <- left_join(urine, master, by = "sample_name") 
 
-#add_annotations(plot + 
-#  theme(axis.title.x=element_blank(),
-#        axis.text.x=element_blank(),
-#        axis.ticks.x=element_blank()), plasma)
-#ggsave(file.path(outdir, "Boxplot_testset_probs_plasma_annotated.pdf"),
-#  width = 7, height = 3.5)
+add_annotations(p_rcc + theme(axis.ticks.x=element_blank()), rcc, met=TRUE)
+ggsave(file.path(savedir, "Boxplot_testset_probs_plasma_annotated.pdf"),
+  width = 7, height = 3.5)
 
+add_annotations(p_urine + theme(axis.ticks.x=element_blank()), urine)
+ggsave(file.path(savedir, "Boxplot_testset_probs_urine_annotated.pdf"),
+  width = 7, height = 3.5)
+
+add_annotations(p_ubc + theme(axis.ticks.x=element_blank()), ubc, met=TRUE)
+ggsave(file.path(savedir, "Boxplot_testset_probs_ubc_annotated.pdf"),
+  width = 7, height = 3.5)
+
+# one-way anova: median prob by stage, histology, metastatic
+
+rcc <- rcc %>%
+  mutate(Metastatic = ifelse(grepl("Met", sample_name), "Metastatic", 
+      ifelse(is.na(Stage), NA, "non-Met"))) %>%
+  group_by(sample_name, Stage, Histology, Metastatic) %>%
+  summarize(median_prob = median(class_prob))
+
+pM <- capture.output(anova(lm(median_prob ~ Metastatic, data=rcc)))
+pS <- capture.output(anova(lm(median_prob ~ Stage, data=rcc)))
+pH <- capture.output(anova(lm(median_prob ~ Histology, data=rcc)))
+
+
+urine <- urine %>%
+  group_by(sample_name, Stage, Histology) %>%
+  summarize(median_prob = median(class_prob))
+
+uS <- capture.output(anova(lm(median_prob ~ Stage, data=urine)))
+uH <- capture.output(anova(lm(median_prob ~ Histology, data=urine)))
+
+
+cat("Plasma: One-way ANOVA for median RCC risk score by metastatic", 
+  pM, "\n", "\n", file=file.path(savedir, "ANOVA_sampletype_rccrisk.txt"), sep="\n",
+    append=FALSE)
+
+cat("Plasma: One-way ANOVA for median RCC risk score by stage", 
+  pS, "\n", "\n", file=file.path(savedir, "ANOVA_sampletype_rccrisk.txt"), sep="\n",
+    append=TRUE)
+
+cat("Plasma: One-way ANOVA for median RCC risk score by histology", 
+  pH, "\n", "\n", file=file.path(savedir, "ANOVA_sampletype_rccrisk.txt"), sep="\n",
+    append=TRUE)
+
+cat("Urine: One-way ANOVA for median RCC risk score by stage", 
+  uS, "\n", "\n", file=file.path(savedir, "ANOVA_sampletype_rccrisk.txt"), sep="\n",
+    append=TRUE)
+
+cat("Urine: One-way ANOVA for median RCC risk score by histology", 
+  uH, file=file.path(savedir, "ANOVA_sampletype_rccrisk.txt"), sep="\n",
+    append=TRUE)
 
 
 ########################################################################
