@@ -79,9 +79,6 @@ bam.blca <- list.files(file.path(bamdir, "BLCA"), "*.bam",
   full.names = TRUE)
 bam.blca <- bam.blca[!grepl(".bai", bam.blca)]
 
-bam.jan2020 <- list.files(file.path(bamdir, "JAN2020"), "*.sorted.bam", 
-  full.names = TRUE)
-bam.jan2020 <- bam.jan2020[!grepl(".bai", bam.jan2020)]
 
 # exclude RCC samples (per Sandor email)
 meta.rcc <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/42 RCC fastq files.xlsx")
@@ -89,31 +86,6 @@ ids.rcc <- gsub(".sorted.bam", "",
               gsub("/arc/project/st-kdkortha-1/cfMeDIPseq/out/sortedbam_dup/RCC/", "", bam.rcc))
 bam.rcc.extra <- bam.rcc[!(ids.rcc %in% meta.rcc$`Fastq name`)]
 bam.rcc <- bam.rcc[ids.rcc %in% meta.rcc$`Fastq name`]
-
-
-# exclude jan2020 samples failing qc (medip file already filtered)
-bam.jan2020 <- bam.jan2020[!grepl(paste0(c("R104_AN", # <1M reads
-    "R41_LD009", # <1M reads
-    "R91_233", # <1M reads / Oncocytoma
-    "R93_250", # <1M reads / Oncocytoma
-    "R54_2321", # Oncocytoma
-    "R38_112", # Oncocytoma
-    "R92_242", # Oncocytoma
-    "R35_190", # Oncocytoma
-    "R109_112", # Oncocytoma
-    "R113_242", # Oncocytoma
-    "R118_233", # Oncocytoma
-    "R114_250", # Oncocytoma
-    "R12_2350", # missing histology
-    "R67_168", # missing histology
-    "R82_205", # missing histology
-    "R11_2353_L7", # extra lane
-    "R12_2350_L7", # extra lane   
-    "R24_LD021_L7", # extra lane  
-    "R42_LD013_L7", # extra lane
-    "R2_CG", # extra coverage   
-    "R6_2366_L7"), collapse="|"), # extra lane
-    bam.jan2020)]
 
 
 ## metastatic RCC data
@@ -134,7 +106,6 @@ medip.rcc <- readRDS(file.path(medipdir, "medip.rcc.rds"))
 medip.control <- readRDS(file.path(medipdir, "medip.control.rds"))
 medip.urineR <- readRDS(file.path(medipdir, "medip.urineR.rds"))
 medip.urineC <- readRDS(file.path(medipdir, "medip.urineC.rds"))
-medip.jan2020 <- readRDS(file.path(medipdir, "medip.jan2020.rds")) # already filtered
 medip.rcc_M <- readRDS(file.path(medipdir, "medip.rcc_M.rds")) # metastatic
 
 
@@ -172,7 +143,7 @@ bam.urineR <- bam.urineR[!grepl("S11.sorted.bam|S12.sorted.bam|S30.sorted.bam|S3
 meta <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/RCC/Keegan - RCC plasma.xlsx", 
   sheet = 1)
 meta2 <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20200108_Sample List.xlsx")
-CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.jan2020[[1]])
+CS = MEDIPS.couplingVector(pattern = "CG", refObj = medip.rcc[[1]])
 
 # master metadata
 master <- read_excel("/arc/project/st-kdkortha-1/cfMeDIPseq/data/20200108/20.01.31 - Final Sample List for NM Revisions.xlsx", 
@@ -183,19 +154,6 @@ master <- master %>%
   mutate(`Sample number` = ifelse(Batch == "Met", tolower(ID), ID)) %>%
   mutate(Histology = ifelse(Histology %in% c("collecting duct", "chrcc", "xptranslocation"), 
     "other", Histology))
-
-m2 <- data.frame(ID=gsub(".sorted.bam", "", 
-  sapply(medip.jan2020, function(x) x@sample_name))) %>%
-  left_join(meta2, by = "ID") %>%
-  left_join(master %>% select(ID, Institution) %>% dplyr::rename(Institution2=Institution), by = "ID")
-
-
-# check order
-n <- gsub(".sorted.bam", "", sapply(medip.jan2020, function(x) x@sample_name))
-x <- match(n, m2$ID)
-if(!identical(x, 1:nrow(m2)))
-  warning("Stop; m2 metadata table not properly sorted")
-
 
 
 # obj1 = first medip object
@@ -1161,28 +1119,29 @@ if(length(excl) > 0)
 # create pooled sets
 # joint medips objs to include new samples
 medip.rcc <- c(medip.rcc, medip.rcc_M)
-medip.urineR <- c(medip.urineR, medip.jan2020[m2$Source=="Urine" & m2$Status == "RCC"])
-medip.urineC <- c(medip.urineC, medip.jan2020[m2$Source=="Urine" & m2$Status == "Control"])
 
 # all samps
 if (iter == 1){
 
 dir.create(file.path(outdir, "../pooled"))
+dir.create(file.path(outdir, "../B1"))
 
 if (FALSE){
 compute.diff(obj1 = medip.rcc, obj2 = medip.control,
            lab1 = "rcc", lab2 = "controlB2",
            out.dir = file.path(outdir, "../pooled"), top = ntop)
 
-compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
-           lab1 = "urineR", lab2 = "urineC",
-           out.dir = file.path(outdir, "../pooled"), top = ntop)
-}
+
 # UBC (urothelial bladder cancer) vs RCC
 medip.blca <- readRDS(file.path(medipdir, "medip.blca.rds"))
 compute.diff(obj1 = medip.rcc, obj2 = medip.blca,
            lab1 = "rcc", lab2 = "blca",
            out.dir = file.path(outdir, "../pooled"), top = ntop)
+}
+
+compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
+           lab1 = "urineR", lab2 = "urineC",
+           out.dir = file.path(outdir, "../B1"), top = ntop)
 
 }
 
@@ -1195,11 +1154,6 @@ compute.diff(obj1 = medip.rcc, obj2 = medip.control,
            out.dir = outdir, top = ntop,
            training=0.8)
 
-compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
-           lab1 = "urineR", lab2 = "urineC",
-           out.dir = outdir, top = ntop,
-           training=0.8)
-}
 
 # UBC (urothelial bladder cancer) vs RCC
 medip.blca <- readRDS(file.path(medipdir, "medip.blca.rds"))
@@ -1207,12 +1161,16 @@ compute.diff(obj1 = medip.rcc, obj2 = medip.blca,
            lab1 = "rcc", lab2 = "blca",
            out.dir = outdir, top = ntop,
            training=0.8)
+}
+
+compute.diff(obj1 = medip.urineR, obj2 = medip.urineC,
+           lab1 = "urineR", lab2 = "urineC",
+           out.dir = outdir, top = ntop,
+           training=0.8)
 
 }
 
 # export counts to wiggle files
-
-if(FALSE){ 
 
 wigdir <- file.path(outdir_root, "../wig")
 dir.create(wigdir)
@@ -1243,10 +1201,15 @@ saveBW <- function(medip.obj, label){
   }
 }
 
+if(FALSE){ 
+if (iter==1){
+saveBW(medip.urineC, "control_urine_b1")
 saveBW(medip.control, "control_plasma_b1")
 saveBW(medip.rcc, "rcc_plasma_b1_met")
-saveBW(medip.urineR, "rcc_urine_b1_b2")
-saveBW(medip.urineC, "control_urine_b1_b2")
+saveBW(medip.urineR, "rcc_urine_b1")
 saveBW(medip.blca, "ubc_plasma_b1")
-
 }
+}
+
+if (iter==1)
+ saveBW(medip.urineR, "rcc_urine_b1")
