@@ -280,6 +280,8 @@ makePCAplots <- function(diff.file, obj1, obj2, label, ntop=NULL){
     
   colors <-  adjustcolor(c("#E69F00", "#56B4E9"), alpha=0.8)
 
+  if (label=="ubc")
+    colors <- rev(colors)
 
   if (!is.null(ntop)){
     label <- paste0(label, "_top", ntop)
@@ -566,7 +568,6 @@ sortLvlsByVar.fnc <- function(oldFactor, sortingVariable, ascending = TRUE) {
   return(newFactor)
 }
 ####  end function to reorder
-
 
 risk_summary <- tmp %>%
   mutate(comparison = ifelse(grepl("blca", filename), "RCC:UBC", "RCC:Ctrl")) %>% 
